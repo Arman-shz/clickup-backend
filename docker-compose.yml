@@ -1,0 +1,45 @@
+# Database only, per project decision: no logging, metrics or admin services here.
+# Production runs the app as a native image built with `./mvnw package -Dnative`;
+# this file exists so dev and prod talk to the same kind of Postgres.
+#
+#   docker compose up -d          start Postgres
+#   docker compose down           stop it (data survives in the named volume)
+#   docker compose down -v        stop it and DELETE all data
+#
+# Defaults below are development credentials and are intentionally weak.
+# Override them for anything reachable from outside your machine by putting
+# POSTGRES_* in a .env file next to this one (.env is git-ignored).
+
+services:
+  postgres:
+    image: postgres:18.4-alpine
+    container_name: clickup-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-clickup}
+      POSTGRES_USER: ${POSTGRES_USER:-clickup}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-clickup}
+      # The API stores Persian text (names, titles, chat, weekly reports), so the
+      # cluster is initialised UTF-8 with the ICU 'fa' collation. Under the default
+      # C collation Postgres sorts by raw bytes and gets Persian wrong -- پ, چ and گ
+      # land out of alphabetical order, so ORDER BY on any Persian column is wrong.
+      # initdb only runs on an empty data dir: changing this later needs a dump/restore.
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C.UTF-8 --locale-provider=icu --icu-locale=fa"
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      # Postgres 18 moved PGDATA to /var/lib/postgresql/18/docker and declares its
+      # VOLUME at /var/lib/postgresql. Mounting the old /var/lib/postgresql/data
+      # path here would leave the real data in an anonymous volume and lose it.
+      - clickup-pgdata:/var/lib/postgresql
+    healthcheck:
+      # Lets `docker compose up --wait` block until Postgres actually accepts
+      # connections, instead of the app racing a still-initialising cluster.
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-clickup} -d ${POSTGRES_DB:-clickup}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  clickup-pgdata:
