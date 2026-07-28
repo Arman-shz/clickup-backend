@@ -151,7 +151,10 @@ endpoint the spec actually protects arrives in 3.1.
 
 ## Phase 3 — User profile
 
-- [ ] 3.1 `GET /api/users/me`
+- [x] 3.1 `GET /api/users/me` → the spec's full `UserProfile`; `401` otherwise. The
+      subject comes from the token's `upn`, never from the request, so the route takes no
+      id and one account cannot address another. A token that verifies but names a
+      deleted account gets the `401`, not a `404` — the spec documents no `404` here
 - [ ] 3.2 `PUT /api/users/me` (name, avatar, theme, language, notificationsEnabled)
 - [ ] 3.3 Enforce enums: `role` admin|student, `theme` light|dark, `language` fa|en
 
