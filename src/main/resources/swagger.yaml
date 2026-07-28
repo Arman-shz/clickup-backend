@@ -7,8 +7,10 @@ info:
     سامانه مدیریت پروژه ClickUp شامل مدیریت هویت، پروژه‌ها و تسک‌ها، چت زنده (SSE)،
     گزارش‌های هفتگی، آپلود فایل ابری و ثبت لاگ متمرکز.
 servers:
-  - url: http://localhost:3000
+  - url: http://localhost:7575
     description: سرور توسعه محلی (Local Dev Server)
+  - url: https://localhost:7443
+    description: سرور توسعه محلی روی TLS (Local Dev Server over TLS)
   - url: https://api.clickup.example.com
     description: سرور اصلی عملیاتی (Production Server)
 

@@ -17,16 +17,13 @@ Legend: `[ ]` todo · `[x]` done · `[!]` blocked on a decision
 These are not implementation details — each one changes the shape of the code, and
 guessing would mean inventing behaviour the spec does not state.
 
-- **D1 — Entity ID format.** Spec examples use prefixed strings: `usr_101`, `proj_1`,
-  `msg_201`, and all `id` fields are `type: string`. Options: keep literal prefixed
-  strings, use UUIDs rendered as strings, or bigint surrogate keys exposed as strings.
-  Blocks: 1.2, and every resource that returns an `id`.
-- **D2 — HTTP port.** Spec declares the dev server as `http://localhost:3000`; Quarkus
-  defaults to 8080. Blocks: 0.3.
-- **D3 — Dev Services vs compose.** With `quarkus-reactive-pg-client` on the classpath
-  and no datasource URL, Quarkus starts its own throwaway Postgres in dev and ignores
-  `docker-compose.yml`. Recommendation: point dev at compose, disable Dev Services.
-  Blocks: 0.3.
+- ~~**D1 — Entity ID format.**~~ **Decided:** prefixed strings generated from a
+  per-entity sequence (`usr_101`, `proj_1`), matching the spec's examples literally.
+- ~~**D2 — HTTP port.**~~ **Decided:** 7575 plain, 7443 TLS. Port 3000 is the frontend,
+  so the spec's server URL was describing something other than this API and has been
+  corrected.
+- ~~**D3 — Dev Services vs compose.**~~ **Decided:** dev uses the compose Postgres;
+  Dev Services disabled. `./mvnw quarkus:dev` now requires `docker compose up -d` first.
 - **D4 — File upload destination.** `/api/upload` returns both a local-looking
   `url: "/uploads/..."` and `cloudMetadata.provider: "Google Cloud Object Storage"`.
   Local disk, real GCS, or local disk with synthesised cloud metadata? Blocks: 9.x.
@@ -50,20 +47,24 @@ guessing would mean inventing behaviour the spec does not state.
 - [x] 0.2 Add reactive extensions to `pom.xml`: `quarkus-reactive-pg-client`,
       `quarkus-hibernate-reactive-panache`, `quarkus-hibernate-validator`,
       `quarkus-smallrye-jwt`, `quarkus-smallrye-jwt-build`, `quarkus-rest-jackson`
-- [!] 0.3 `application.properties`: reactive datasource pointing at compose, HTTP port,
-      dev/prod profiles, Dev Services setting — *needs D2, D3*
+- [x] 0.3 `application.properties`: reactive datasource pointing at compose, ports
+      7575/7443, Dev Services disabled, Hibernate schema generation off
 - [ ] 0.4 Error model: `ErrorResponse` / `SuccessMessageResponse` records exactly as
       specified, plus exception mappers producing the spec's `400` / `401` / `404` bodies
 - [ ] 0.5 `GET /api/health` — first vertical slice, proves reactive DB connectivity
       (returns `status`, `timestamp`, `database`)
 - [ ] 0.6 Delete the `/hello` starter resource and its two tests once 0.5 replaces them
+- [ ] 0.7 TLS keystore so 7443 actually binds. Verified in 0.3 that Quarkus starts only
+      the plain listener without a certificate: `Listening on: http://localhost:7575`,
+      and 7443 refuses connections. Needs a dev certificate and a prod key source.
 
 ## Phase 1 — Domain model & schema
 
-- [!] 1.1 Schema strategy: Flyway migrations vs `hibernate-orm.database.generation` —
-      *decide alongside D1*
-- [!] 1.2 Entities: `User`, `Project`, `Task`, `WeeklyReport`, `ChatMessage`,
-      `RefreshToken` — *needs D1*
+- [ ] 1.1 Liquibase changelog owns the schema (`quarkus-liquibase` + `quarkus-jdbc-postgresql`
+      for the migration-only JDBC connection; Liquibase has no reactive driver)
+- [ ] 1.2 Entities: `User`, `Project`, `Task`, `WeeklyReport`, `ChatMessage`,
+      `RefreshToken` with prefixed-string ids from per-entity sequences
+- [ ] 1.6 Seed data: 30 rows per table, Persian content, loaded via Liquibase
 - [ ] 1.3 `Task.assignees` is an array of user ids → join table `task_assignees`
 - [ ] 1.4 Panache reactive repositories returning `Uni`/`Multi` (no blocking calls)
 - [ ] 1.5 Confirm every spec schema field maps to a column with the right nullability
