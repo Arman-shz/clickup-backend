@@ -1,0 +1,911 @@
+openapi: 3.1.0
+info:
+  title: ClickUp Project Management API
+  version: 1.0.0
+  description: >
+    مستندات کامل و تولیدی (Production-Ready) رابط‌های برنامه‌نویسی کاربردی (API)
+    سامانه مدیریت پروژه ClickUp شامل مدیریت هویت، پروژه‌ها و تسک‌ها، چت زنده (SSE)،
+    گزارش‌های هفتگی، آپلود فایل ابری و ثبت لاگ متمرکز.
+servers:
+  - url: http://localhost:3000
+    description: سرور توسعه محلی (Local Dev Server)
+  - url: https://api.clickup.example.com
+    description: سرور اصلی عملیاتی (Production Server)
+
+tags:
+  - name: Authentication
+    description: مدیریت نشست‌ها، ورود و توکن‌های دسترسی (JWT)
+  - name: User Profile
+    description: دریافت و ویرایش اطلاعات حساب کاربری و تنظیمات شخص
+  - name: Projects
+    description: مدیریت چرخه حیات پروژه‌ها (CRUD و Sync)
+  - name: Tasks
+    description: مدیریت وظایف، وضعیت‌ها و تخصیص‌ها
+  - name: Weekly Reports
+    description: ثبت و دریافت گزارش‌های کارکرد هفتگی اعضا
+  - name: Live Chat
+    description: پیام‌رسانی تیمی و استریم زنده پیام‌ها (SSE)
+  - name: File Upload
+    description: آپلود فایل تا سقف ۵۰ مگابایت و دریافت متادیتای ابری
+  - name: Team Members
+    description: مشاهده اعضای تیم و نقش‌های آن‌ها
+  - name: Central Logging
+    description: دریافت لاگ‌ها و خطاهای فرانت‌اند جهت ذخیره متمرکز
+  - name: System
+    description: بررسی سلامت سرور و دیتابیس
+
+paths:
+  # ==================== AUTHENTICATION ====================
+  /api/auth/login:
+    post:
+      tags:
+        - Authentication
+      summary: ورود به حساب کاربری
+      description: ورود دانشجویان و مدیران با شماره دانشجویی/نام کاربری و رمز عبور.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+            example:
+              studentId: "99100111"
+              password: "Password123"
+      responses:
+        '200':
+          description: ورود موفقیت‌آمیز
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+              example:
+                accessToken: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                refreshToken: "d8f3a1e2-4b5c-6d7e-8f9a-0b1c2d3e4f5a"
+                user:
+                  id: "usr_101"
+                  studentId: "99100111"
+                  name: "علی محمدی"
+                  email: "a.mohammadi@example.com"
+                  role: "student"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: نام کاربری یا رمز عبور اشتباه است
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                message: "نام کاربری یا رمز عبور اشتباه است"
+
+  /api/auth/refresh:
+    post:
+      tags:
+        - Authentication
+      summary: تمدید توکن دسترسی (Refresh Access Token)
+      description: دریافت توکن دسترسی جدید با ارائه Refresh Token معتبر.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - refreshToken
+              properties:
+                refreshToken:
+                  type: string
+                  description: توکن رفرش معتبر کاربر
+            example:
+              refreshToken: "d8f3a1e2-4b5c-6d7e-8f9a-0b1c2d3e4f5a"
+      responses:
+        '200':
+          description: تمدید موفقیت‌آمیز توکن
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accessToken:
+                    type: string
+                  refreshToken:
+                    type: string
+              example:
+                accessToken: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.new..."
+                refreshToken: "f9e8d7c6-5b4a-3f2e-1d0c-9b8a7f6e5d4c"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ==================== USER PROFILE ====================
+  /api/users/me:
+    get:
+      tags:
+        - User Profile
+      summary: دریافت اطلاعات پروفایل کاربر جاری
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: اطلاعات کامل پروفایل کاربر
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    put:
+      tags:
+        - User Profile
+      summary: ویرایش اطلاعات پروفایل و تنظیمات
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserProfileRequest'
+            example:
+              name: "علی محمدی (مدیر)"
+              avatar: "https://cdn.example.com/avatars/user101.jpg"
+              theme: "dark"
+              language: "fa"
+              notificationsEnabled: true
+      responses:
+        '200':
+          description: پروفایل با موفقیت به‌روزرسانی شد
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+
+  # ==================== PROJECTS ====================
+  /api/projects:
+    get:
+      tags:
+        - Projects
+      summary: دریافت لیست پروژه‌ها
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: آرایه پروژه‌ها
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Project'
+
+    post:
+      tags:
+        - Projects
+      summary: ایجاد پروژه جدید
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProjectRequest'
+            example:
+              title: "طراحی سیستم مدیریت هوشمند"
+              description: "پروژه فاز اول سامانه ClickUp"
+              color: "#3B82F6"
+              icon: "FolderKanban"
+      responses:
+        '201':
+          description: پروژه با موفقیت ایجاد شد
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+
+  /api/projects/{id}:
+    put:
+      tags:
+        - Projects
+      summary: ویرایش پروژه موجود
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          example: "proj_1"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProjectRequest'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags:
+        - Projects
+      summary: حذف پروژه
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          $ref: '#/components/responses/SuccessMessage'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/projects/sync:
+    post:
+      tags:
+        - Projects
+      summary: همگام‌سازی کلی پروژه‌ها (Bulk Sync)
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - projects
+              properties:
+                projects:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/Project'
+      responses:
+        '200':
+          $ref: '#/components/responses/SuccessMessage'
+
+  # ==================== TASKS ====================
+  /api/tasks:
+    get:
+      tags:
+        - Tasks
+      summary: دریافت لیست تسک‌ها
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: projectId
+          in: query
+          required: false
+          schema:
+            type: string
+          description: فیلتر تسک‌ها بر اساس شناسه پروژه
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [todo, in_progress, review, done]
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Task'
+
+    post:
+      tags:
+        - Tasks
+      summary: ایجاد تسک جدید
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTaskRequest'
+            example:
+              projectId: "proj_1"
+              title: "پیاده‌سازی صفحه ورود"
+              description: "طراحی فرم و اتصال به API"
+              status: "in_progress"
+              priority: "high"
+              assignees: ["usr_101"]
+              dueDate: "2026-08-15"
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+
+  /api/tasks/{id}:
+    put:
+      tags:
+        - Tasks
+      summary: ویرایش یا تغییر وضعیت تسک
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTaskRequest'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+
+    delete:
+      tags:
+        - Tasks
+      summary: حذف تسک
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          $ref: '#/components/responses/SuccessMessage'
+
+  # ==================== WEEKLY REPORTS ====================
+  /api/reports:
+    get:
+      tags:
+        - Weekly Reports
+      summary: دریافت تاریخچه گزارش‌های هفتگی
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/WeeklyReport'
+
+    post:
+      tags:
+        - Weekly Reports
+      summary: ثبت گزارش کارکرد هفتگی جدید
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateReportRequest'
+            example:
+              weekTitle: "هفته دوم مرداد ۱۴۰۵"
+              hoursWorked: 42
+              tasksCompleted: 8
+              achievements: "تکمیل بخش ورود کاربران و تست‌های اتوماسیون E2E"
+              challenges: "پیچیدگی هماهنگی SSE روی سرور ابری"
+              nextWeekPlan: "طراحی داشبورد آنالیتیکس مدیریت"
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WeeklyReport'
+
+  # ==================== LIVE CHAT ====================
+  /api/chat/messages:
+    get:
+      tags:
+        - Live Chat
+      summary: دریافت سابقه پیام‌های چت تیمی
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ChatMessage'
+
+    post:
+      tags:
+        - Live Chat
+      summary: ارسال پیام جدید در چت
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - content
+              properties:
+                content:
+                  type: string
+                fileUrl:
+                  type: string
+            example:
+              content: "سلام همکاران گرامی، گزارش این هفته ثبت شد."
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatMessage'
+
+  /api/chat/stream:
+    get:
+      tags:
+        - Live Chat
+      summary: استریم زنده پیام‌های چت (SSE - Server-Sent Events)
+      description: اتصال بلندمدت (HTTP Connection) جهت دریافت لحظه‌ای پیام‌های جدید بدون رفرش مرورگر.
+      responses:
+        '200':
+          description: جریان زنده رویدادها (text/event-stream)
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                example: "data: {\"id\":\"msg_201\",\"senderName\":\"علی\",\"content\":\"سلام!\",\"timestamp\":\"2026-07-28T10:00:00Z\"}\n\n"
+
+  # ==================== FILE UPLOAD ====================
+  /api/upload:
+    post:
+      tags:
+        - File Upload
+      summary: آپلود فایل تا سقف ۵۰ مگابایت
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: فایل مورد نظر جهت آپلود (حداکثر ۵۰ مگابایت)
+      responses:
+        '200':
+          description: فایل با موفقیت آپلود شد و متادیتای ذخیره‌سازی ابری بازگردانده شد
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileUploadResponse'
+              example:
+                success: true
+                url: "/uploads/1722150000_report.pdf"
+                filename: "1722150000_report.pdf"
+                size: 10485760
+                cloudMetadata:
+                  cdnUrl: "https://cdn.example.com/uploads/1722150000_report.pdf"
+                  provider: "Google Cloud Object Storage"
+                  objectKey: "uploads/1722150000_report.pdf"
+
+  # ==================== TEAM MEMBERS ====================
+  /api/members:
+    get:
+      tags:
+        - Team Members
+      summary: دریافت لیست اعضای تیم
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TeamMember'
+
+  # ==================== CENTRAL LOGGING ====================
+  /api/logs:
+    post:
+      tags:
+        - Central Logging
+      summary: ارسال و ثبت لاگ از فرانت‌اند
+      description: ذخیره لاگ‌ها و خطاهای کلاینت در فایل‌های متمرکز server `/logs/app.log` و `/logs/error.log`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - level
+                - message
+              properties:
+                level:
+                  type: string
+                  enum: [info, warn, error]
+                message:
+                  type: string
+                context:
+                  type: object
+                  additionalProperties: true
+            example:
+              level: "error"
+              message: "Failed to render chart component"
+              context:
+                component: "DashboardChart"
+                userId: "usr_101"
+      responses:
+        '200':
+          $ref: '#/components/responses/SuccessMessage'
+
+  # ==================== HEALTH ====================
+  /api/health:
+    get:
+      tags:
+        - System
+      summary: بررسی وضعیت سلامت سرور و دیتابیس
+      responses:
+        '200':
+          description: وضعیت سرور نرمال است
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "ok"
+                  timestamp:
+                    type: string
+                    example: "2026-07-28T08:12:00.000Z"
+                  database:
+                    type: string
+                    example: "connected"
+
+# ==================== COMPONENTS & SCHEMAS ====================
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: توکن دسترسی JWT صادر شده در پاسخ ورود
+
+  schemas:
+    LoginRequest:
+      type: object
+      required:
+        - studentId
+        - password
+      properties:
+        studentId:
+          type: string
+          description: شماره دانشجویی یا نام کاربری ورود
+        password:
+          type: string
+          description: رمز عبور کاربر
+
+    LoginResponse:
+      type: object
+      properties:
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+        user:
+          $ref: '#/components/schemas/UserProfile'
+
+    UserProfile:
+      type: object
+      properties:
+        id:
+          type: string
+        studentId:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum: [admin, student]
+        avatar:
+          type: string
+        theme:
+          type: string
+          enum: [light, dark]
+        language:
+          type: string
+          enum: [fa, en]
+        notificationsEnabled:
+          type: boolean
+
+    UpdateUserProfileRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+        avatar:
+          type: string
+        theme:
+          type: string
+        language:
+          type: string
+        notificationsEnabled:
+          type: boolean
+
+    Project:
+      type: object
+      required:
+        - id
+        - title
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        color:
+          type: string
+        icon:
+          type: string
+        createdAt:
+          type: string
+
+    CreateProjectRequest:
+      type: object
+      required:
+        - title
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        color:
+          type: string
+        icon:
+          type: string
+
+    Task:
+      type: object
+      required:
+        - id
+        - title
+        - status
+      properties:
+        id:
+          type: string
+        projectId:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        status:
+          type: string
+          enum: [todo, in_progress, review, done]
+        priority:
+          type: string
+          enum: [low, medium, high]
+        assignees:
+          type: array
+          items:
+            type: string
+        dueDate:
+          type: string
+
+    CreateTaskRequest:
+      type: object
+      required:
+        - title
+        - projectId
+      properties:
+        projectId:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        status:
+          type: string
+          enum: [todo, in_progress, review, done]
+        priority:
+          type: string
+          enum: [low, medium, high]
+        assignees:
+          type: array
+          items:
+            type: string
+        dueDate:
+          type: string
+
+    WeeklyReport:
+      type: object
+      properties:
+        id:
+          type: string
+        userId:
+          type: string
+        userName:
+          type: string
+        weekTitle:
+          type: string
+        hoursWorked:
+          type: number
+        tasksCompleted:
+          type: integer
+        achievements:
+          type: string
+        challenges:
+          type: string
+        nextWeekPlan:
+          type: string
+        submittedAt:
+          type: string
+
+    CreateReportRequest:
+      type: object
+      required:
+        - weekTitle
+        - hoursWorked
+        - tasksCompleted
+      properties:
+        weekTitle:
+          type: string
+        hoursWorked:
+          type: number
+        tasksCompleted:
+          type: integer
+        achievements:
+          type: string
+        challenges:
+          type: string
+        nextWeekPlan:
+          type: string
+
+    ChatMessage:
+      type: object
+      properties:
+        id:
+          type: string
+        senderId:
+          type: string
+        senderName:
+          type: string
+        senderAvatar:
+          type: string
+        content:
+          type: string
+        fileUrl:
+          type: string
+        timestamp:
+          type: string
+
+    TeamMember:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+        role:
+          type: string
+        status:
+          type: string
+
+    FileUploadResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        url:
+          type: string
+        filename:
+          type: string
+        size:
+          type: number
+        cloudMetadata:
+          type: object
+          properties:
+            cdnUrl:
+              type: string
+            provider:
+              type: string
+            objectKey:
+              type: string
+
+    SuccessMessageResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        errors:
+          type: array
+          items:
+            type: string
+
+  responses:
+    SuccessMessage:
+      description: عملیات با موفقیت انجام شد
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/SuccessMessageResponse'
+          example:
+            success: true
+            message: "عملیات با موفقیت انجام شد."
+
+    BadRequest:
+      description: درخواست نامعتبر است (خطای اعتبارسنجی ورودی‌ها)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            message: "اطلاعات ورودی نامعتبر است."
+
+    Unauthorized:
+      description: عدم احراز هویت یا توکن نامعتبر/منقضی شده
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            message: "دسترسی غیرمجاز. لطفا دوباره وارد شوید."
+
+    NotFound:
+      description: منبع مورد نظر یافت نشد
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            message: "منبع مورد نظر پیدا نشد."
