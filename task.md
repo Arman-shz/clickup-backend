@@ -36,8 +36,9 @@ guessing would mean inventing behaviour the spec does not state.
 - **D7 — Central logging target.** `/api/logs` says it writes `/logs/app.log` and
   `/logs/error.log`. Files on the container filesystem, or a DB table? Files vanish on
   container restart unless a volume is added. Blocks: 10.1.
-- **D8 — Refresh token storage.** Spec shows opaque UUID refresh tokens, distinct from
-  the JWT access token. Persisted table, or stateless signed token? Blocks: 2.3.
+- ~~**D8 — Refresh token storage.**~~ **Decided by the spec itself:** the refreshToken
+  example is a bare UUID. It carries no signature, so nothing about it can be verified
+  without a lookup — it must be persisted. Table `refresh_tokens`.
 
 ---
 
@@ -63,22 +64,48 @@ guessing would mean inventing behaviour the spec does not state.
 
 ## Phase 1 — Domain model & schema
 
-- [ ] 1.1 Liquibase changelog owns the schema (`quarkus-liquibase` + `quarkus-jdbc-postgresql`
+- [x] 1.1 Liquibase changelog owns the schema (`quarkus-liquibase` + `quarkus-jdbc-postgresql`
       for the migration-only JDBC connection; Liquibase has no reactive driver)
-- [ ] 1.2 Entities: `User`, `Project`, `Task`, `WeeklyReport`, `ChatMessage`,
+- [x] 1.2 Entities: `User`, `Project`, `Task`, `WeeklyReport`, `ChatMessage`,
       `RefreshToken` with prefixed-string ids from per-entity sequences
-- [ ] 1.6 Seed data: 30 rows per table, Persian content, loaded via Liquibase
-- [ ] 1.3 `Task.assignees` is an array of user ids → join table `task_assignees`
-- [ ] 1.4 Panache reactive repositories returning `Uni`/`Multi` (no blocking calls)
-- [ ] 1.5 Confirm every spec schema field maps to a column with the right nullability
+- [x] 1.6 Seed data: 30 rows per table, Persian content, loaded via Liquibase.
+      Guarded by the `seed` context so production does not inherit it
+- [x] 1.3 `Task.assignees` is an array of user ids → join table `task_assignees`
+- [x] 1.4 Panache reactive repositories returning `Uni` (no blocking calls)
+- [x] 1.5 Confirm every spec schema field maps to a column with the right nullability
+
+**Phase 1 complete.** Schema, seed and repositories are exercised by
+`RepositoryTest` and `SpecSchemaCoverageTest` against the compose Postgres.
+
+### What the 1.5 audit turned up
+
+Every spec property reaches a column and the nullability matches. Four gaps are
+real but belong to later phases — they are places where a bad request currently
+reaches the database and comes back as a 500 instead of the spec's 400:
+
+- `users.email` is UNIQUE, and `PUT /api/users/me` can change it. A duplicate is a
+  constraint violation today. Blocks nothing, but 3.2 must catch it.
+- Column lengths (`title` 255, `avatar` 1024, …) are unenforced above the database.
+  4.2 / 5.2 need `@Size` so over-long input is rejected before the insert.
+- `task_assignees.user_id` is a foreign key. Posting an unknown assignee id is a
+  violation, so 5.2 must check the ids exist.
+- `due_date` is a real `DATE` while the spec types `dueDate` as a string. A full
+  datetime string will not parse. 5.2 should reject it explicitly.
+
+Two deliberate departures, both recorded in the changelog: tasks cascade when their
+project is deleted, and `tasks.project_id` is NOT NULL even though the `Task` schema
+does not list it required — `CreateTaskRequest` does, so no task can exist without one.
 
 ## Phase 2 — Authentication
 
-- [!] 2.1 Password hashing (no plaintext) — *pick algorithm; must work in native image*
-- [!] 2.2 User seeding — *needs D6*
-- [!] 2.3 `POST /api/auth/login` → `LoginResponse` (accessToken, refreshToken, user);
-      `401` on bad credentials — *needs D8*
-- [!] 2.4 `POST /api/auth/refresh` → new token pair; `401` when invalid — *needs D8*
+- [ ] 2.1 Password hashing — **bcrypt**, settled by the seed, which stores a real bcrypt
+      hash. Verification still to wire up, and to confirm in the native image
+- [!] 2.2 User seeding — *needs D6.* Dev and test have 30 seeded accounts; production
+      has none, and no endpoint creates one
+- [ ] 2.3 `POST /api/auth/login` → `LoginResponse` (accessToken, refreshToken, user);
+      `401` on bad credentials. Seeded credentials: `99100111` / `Password123`
+- [ ] 2.4 `POST /api/auth/refresh` → new token pair; `401` when invalid. Rotates:
+      `RefreshTokenRepository.revoke` retires the presented token as the new one is issued
 - [ ] 2.5 JWT signing keys + `BearerAuth` wiring; RBAC for `admin` / `student`
 - [ ] 2.6 `401` mapper returns the spec's exact `Unauthorized` body
 
