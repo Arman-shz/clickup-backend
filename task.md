@@ -55,9 +55,11 @@ guessing would mean inventing behaviour the spec does not state.
       DB probe reactive; `/q/health/*` for probes, `/api/health` for the spec's shape
 - [x] 0.6 Deleted the `/hello` starter resource and its two tests, replaced by
       `HealthResourceTest` / `HealthResourceIT`
-- [ ] 0.7 TLS keystore so 7443 actually binds. Verified in 0.3 that Quarkus starts only
-      the plain listener without a certificate: `Listening on: http://localhost:7575`,
-      and 7443 refuses connections. Needs a dev certificate and a prod key source.
+- [x] 0.7 TLS keystore so 7443 binds. Dev/test use a committed self-signed localhost
+      certificate; prod reads `TLS_KEYSTORE_PATH` / `TLS_KEYSTORE_PASSWORD` from the
+      environment and ships no key material.
+
+**Phase 0 complete.**
 
 ## Phase 1 — Domain model & schema
 
