@@ -10,14 +10,18 @@ import jakarta.enterprise.context.ApplicationScoped;
 import java.util.function.Supplier;
 
 /**
- * Task 2.1: bcrypt, settled by the seed, which stores real bcrypt hashes that this
- * class must be able to verify.
+ * Task 2.1: password hashing, following the security-jpa guide -- {@code BcryptUtil}
+ * writing Modular Crypt Format, which is the format {@code @Password} reads by default.
  *
- * <p>Both operations are deliberately pushed onto the worker pool. bcrypt is slow *by
- * design* -- at the default cost of 10 a single hash is tens of milliseconds of solid
- * CPU -- and this application is fully reactive, so running it inline would park an
- * event-loop thread and stall every other request sharing it. That is exactly the
- * failure mode a password hash is supposed to impose on an attacker, not on the server.
+ * <p>Hashing only. Verification is not here and must not be added: the security-jpa
+ * provider does it during authentication, and a second implementation of "is this the
+ * right password" is exactly the kind of thing that drifts.
+ *
+ * <p>The work is deliberately pushed onto the worker pool. bcrypt is slow *by design* --
+ * at the default cost of 10 a single hash is tens of milliseconds of solid CPU -- and
+ * this application is fully reactive, so running it inline would park an event-loop
+ * thread and stall every other request sharing it. That is the cost a password hash is
+ * meant to impose on an attacker, not on the server.
  */
 @ApplicationScoped
 public class PasswordService {
@@ -25,14 +29,6 @@ public class PasswordService {
     /** Produces a Modular Crypt Format hash: {@code $2a$10$<salt><digest>}. */
     public Uni<String> hash(String plainText) {
         return offload(() -> BcryptUtil.bcryptHash(plainText));
-    }
-
-    /**
-     * Verifies a candidate against a stored hash. The cost factor and salt are read back
-     * out of the hash itself, so hashes written at a different cost keep verifying.
-     */
-    public Uni<Boolean> matches(String plainText, String storedHash) {
-        return offload(() -> BcryptUtil.matches(plainText, storedHash));
     }
 
     /**

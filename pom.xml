@@ -75,10 +75,19 @@
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-liquibase</artifactId>
         </dependency>
-        <!-- BcryptUtil: hashing and verification for the stored password_hash. -->
+        <!-- BcryptUtil: hashing for the stored password_hash. -->
         <dependency>
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-elytron-security-common</artifactId>
+        </dependency>
+        <!--
+            Credential verification per the security-jpa guide. The *-reactive variant,
+            because the blocking one drives Hibernate ORM and this application has only
+            a reactive session.
+        -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-security-jpa-reactive</artifactId>
         </dependency>
         <dependency>
             <groupId>io.quarkus</groupId>

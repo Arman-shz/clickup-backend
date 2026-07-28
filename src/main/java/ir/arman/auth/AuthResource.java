@@ -1,8 +1,14 @@
 package ir.arman.auth;
 
+import io.quarkus.hibernate.reactive.panache.Panache;
 import io.quarkus.hibernate.reactive.panache.common.WithTransaction;
+import io.quarkus.security.AuthenticationFailedException;
+import io.quarkus.security.credential.PasswordCredential;
+import io.quarkus.security.identity.IdentityProviderManager;
+import io.quarkus.security.identity.request.UsernamePasswordAuthenticationRequest;
 import io.smallrye.mutiny.Uni;
 import ir.arman.api.dto.ErrorResponse;
+import ir.arman.api.dto.LoginRequest;
 import ir.arman.api.dto.RegisterRequest;
 import ir.arman.api.error.ApiMessages;
 import ir.arman.domain.Language;
@@ -35,6 +41,9 @@ public class AuthResource {
 
     @Inject
     TokenService tokens;
+
+    @Inject
+    IdentityProviderManager identityProviderManager;
 
     /**
      * POST /api/auth/register -- creates an account and signs it in.
@@ -75,6 +84,60 @@ public class AuthResource {
                             .entity(session)
                             .build());
         });
+    }
+
+    /**
+     * POST /api/auth/login -- exchanges credentials for a token pair.
+     *
+     * <p>The password is never compared here. {@code IdentityProviderManager} hands the
+     * request to the security-jpa provider, which finds the row by {@code @Username} and
+     * checks the candidate against the {@code @Password} column in Modular Crypt Format.
+     * That keeps the comparison constant-time and in one place, and means this method
+     * cannot accidentally use {@code equals} on a hash.
+     *
+     * <p>Every failure -- unknown student id, wrong password, deactivated account --
+     * returns the same 401 with the same message. Telling the three apart would let an
+     * unauthenticated caller enumerate which student ids exist.
+     */
+    @POST
+    @Path("/login")
+    public Uni<Response> login(@Valid LoginRequest request) {
+        String studentId = request.studentId().strip();
+
+        return identityProviderManager
+                .authenticate(new UsernamePasswordAuthenticationRequest(
+                        studentId, new PasswordCredential(request.password().toCharArray())))
+                // The transaction opens *after* authentication, and this method carries no
+                // @WithTransaction, on purpose. The identity provider runs its own session,
+                // and work resumed afterwards is no longer inside a transaction opened
+                // before it -- an insert there is simply dropped. Silently: the refresh
+                // token is a UUID minted in Java, so the response still looked correct
+                // while no row existed and every later refresh would have failed with 401.
+                .flatMap(identity -> Panache.withTransaction(() -> users.findByStudentId(studentId)
+                        .flatMap(user -> {
+                            // The spec gives TeamMember.status no enum and no endpoint
+                            // that sets it, so it can only be changed against the database
+                            // directly -- by an operator deliberately shutting an account
+                            // down. Honouring it is the only reading under which that act
+                            // does anything at all.
+                            if (!STATUS_ACTIVE.equals(user.status)) {
+                                return Uni.createFrom().item(badCredentials());
+                            }
+                            return tokens.issueFor(user)
+                                    .map(session -> Response.ok(session).build());
+                        })))
+                // Recovered here rather than left to AuthenticationFailedExceptionMapper:
+                // that mapper emits the generic "دسترسی غیرمجاز" body, while the spec
+                // documents a different, more specific message for this route's 401.
+                .onFailure(AuthenticationFailedException.class)
+                .recoverWithItem(AuthResource::badCredentials);
+    }
+
+    /** paths./api/auth/login.post.responses.401, verbatim. */
+    private static Response badCredentials() {
+        return Response.status(Response.Status.UNAUTHORIZED)
+                .entity(ErrorResponse.of(ApiMessages.BAD_CREDENTIALS))
+                .build();
     }
 
     /**

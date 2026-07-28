@@ -31,6 +31,7 @@ import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -53,9 +54,6 @@ class AuthResourceTest {
 
     @Inject
     JWTParser jwtParser;
-
-    @Inject
-    PasswordService passwords;
 
     @Inject
     UserRepository users;
@@ -144,28 +142,17 @@ class AuthResourceTest {
                 .map(rows -> rows.iterator().next().getString("password_hash"))
                 .await().indefinitely();
 
+        // Modular Crypt Format, which is what @Password expects by default -- the
+        // algorithm marker, the cost, then salt and digest. That this hash actually
+        // verifies is proved end to end by LoginTest, through the real provider rather
+        // than through a second comparison written here.
         assertTrue(storedHash.startsWith("$2a$10$"), "expected a bcrypt hash, got: " + storedHash);
-        assertTrue(passwords.matches("Password123", storedHash).await().indefinitely());
-        assertFalse(passwords.matches("password123", storedHash).await().indefinitely(),
-                "verification must be case sensitive");
-    }
+        assertNotEquals("Password123", storedHash);
 
-    /**
-     * Task 2.1: the 30 seeded accounts were hashed outside this application, so the
-     * choice of bcrypt is only settled if PasswordService can actually verify them.
-     * If this fails, the seeded credentials in the spec's login example do not work.
-     */
-    @Test
-    void theSeededPasswordHashesVerify() {
-        String seededHash = pool
-                .preparedQuery("SELECT password_hash FROM users WHERE student_id = $1")
-                .execute(Tuple.of("99100111"))
-                .map(rows -> rows.iterator().next().getString("password_hash"))
-                .await().indefinitely();
-
-        assertTrue(passwords.matches("Password123", seededHash).await().indefinitely(),
-                "the documented seed credentials must verify against the stored hash");
-        assertFalse(passwords.matches("Password124", seededHash).await().indefinitely());
+        // Same password, different row: the salt must differ, or the column would leak
+        // which accounts share a password.
+        String otherHash = registerAndReadHash(TEST_PREFIX + "003b");
+        assertNotEquals(storedHash, otherHash, "two accounts with the same password must not share a hash");
     }
 
     /**
@@ -282,6 +269,17 @@ class AuthResourceTest {
                 .await().indefinitely();
 
         assertEquals(2L, live, "each new account should be left holding one usable refresh token");
+    }
+
+    private String registerAndReadHash(String studentId) {
+        given().contentType(ContentType.JSON).body(registration(studentId))
+                .when().post("/api/auth/register")
+                .then().statusCode(201);
+
+        return pool.preparedQuery("SELECT password_hash FROM users WHERE student_id = $1")
+                .execute(Tuple.of(studentId))
+                .map(rows -> rows.iterator().next().getString("password_hash"))
+                .await().indefinitely();
     }
 
     private long countUsersWithStudentId(String studentId) {
