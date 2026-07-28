@@ -47,9 +47,9 @@ guessing would mean inventing behaviour the spec does not state.
 ## Phase 0 — Foundation
 
 - [x] 0.1 Postgres via docker-compose (UTF8 + ICU `fa` collation, named volume)
-- [ ] 0.2 Add reactive extensions to `pom.xml`: `quarkus-reactive-pg-client`,
+- [x] 0.2 Add reactive extensions to `pom.xml`: `quarkus-reactive-pg-client`,
       `quarkus-hibernate-reactive-panache`, `quarkus-hibernate-validator`,
-      `quarkus-smallrye-jwt`, `quarkus-smallrye-jwt-build`
+      `quarkus-smallrye-jwt`, `quarkus-smallrye-jwt-build`, `quarkus-rest-jackson`
 - [!] 0.3 `application.properties`: reactive datasource pointing at compose, HTTP port,
       dev/prod profiles, Dev Services setting — *needs D2, D3*
 - [ ] 0.4 Error model: `ErrorResponse` / `SuccessMessageResponse` records exactly as
