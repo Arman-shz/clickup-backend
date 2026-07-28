@@ -49,11 +49,12 @@ guessing would mean inventing behaviour the spec does not state.
       `quarkus-smallrye-jwt`, `quarkus-smallrye-jwt-build`, `quarkus-rest-jackson`
 - [x] 0.3 `application.properties`: reactive datasource pointing at compose, ports
       7575/7443, Dev Services disabled, Hibernate schema generation off
-- [ ] 0.4 Error model: `ErrorResponse` / `SuccessMessageResponse` records exactly as
+- [x] 0.4 Error model: `ErrorResponse` / `SuccessMessageResponse` records exactly as
       specified, plus exception mappers producing the spec's `400` / `401` / `404` bodies
-- [ ] 0.5 `GET /api/health` — first vertical slice, proves reactive DB connectivity
-      (returns `status`, `timestamp`, `database`)
-- [ ] 0.6 Delete the `/hello` starter resource and its two tests once 0.5 replaces them
+- [x] 0.5 `GET /api/health` via `quarkus-smallrye-health` — `AsyncHealthCheck` keeps the
+      DB probe reactive; `/q/health/*` for probes, `/api/health` for the spec's shape
+- [x] 0.6 Deleted the `/hello` starter resource and its two tests, replaced by
+      `HealthResourceTest` / `HealthResourceIT`
 - [ ] 0.7 TLS keystore so 7443 actually binds. Verified in 0.3 that Quarkus starts only
       the plain listener without a certificate: `Listening on: http://localhost:7575`,
       and 7443 refuses connections. Needs a dev certificate and a prod key source.
