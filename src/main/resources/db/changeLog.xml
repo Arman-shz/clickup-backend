@@ -15,4 +15,7 @@
 
     <include file="db/changelog/001-initial-schema.sql"/>
 
+    <!-- Guarded by the `seed` context, which only dev and test activate. -->
+    <include file="db/changelog/002-seed-data.sql"/>
+
 </databaseChangeLog>
