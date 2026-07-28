@@ -9,12 +9,15 @@ import io.quarkus.security.identity.request.UsernamePasswordAuthenticationReques
 import io.smallrye.mutiny.Uni;
 import ir.arman.api.dto.ErrorResponse;
 import ir.arman.api.dto.LoginRequest;
+import ir.arman.api.dto.RefreshRequest;
+import ir.arman.api.dto.RefreshResponse;
 import ir.arman.api.dto.RegisterRequest;
 import ir.arman.api.error.ApiMessages;
 import ir.arman.domain.Language;
 import ir.arman.domain.Role;
 import ir.arman.domain.Theme;
 import ir.arman.domain.User;
+import ir.arman.repository.RefreshTokenRepository;
 import ir.arman.repository.UserRepository;
 import jakarta.inject.Inject;
 import jakarta.validation.Valid;
@@ -24,6 +27,9 @@ import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+
+import java.time.Instant;
+import java.util.UUID;
 
 @Path("/api/auth")
 @Consumes(MediaType.APPLICATION_JSON)
@@ -44,6 +50,9 @@ public class AuthResource {
 
     @Inject
     IdentityProviderManager identityProviderManager;
+
+    @Inject
+    RefreshTokenRepository refreshTokens;
 
     /**
      * POST /api/auth/register -- creates an account and signs it in.
@@ -131,6 +140,71 @@ public class AuthResource {
                 // documents a different, more specific message for this route's 401.
                 .onFailure(AuthenticationFailedException.class)
                 .recoverWithItem(AuthResource::badCredentials);
+    }
+
+    /**
+     * POST /api/auth/refresh -- trades a live refresh token for a new pair.
+     *
+     * <p>Rotating, not renewing. The presented token is revoked in the same transaction
+     * that issues its replacement, so each one is usable exactly once. That is what makes
+     * a stolen refresh token a bounded problem: the thief and the real client cannot both
+     * use it, and whichever loses is locked out immediately and visibly.
+     *
+     * <p>Unknown, malformed, expired, revoked, or belonging to an account that has since
+     * been deactivated all produce the same 401. The route documents no other failure.
+     */
+    @POST
+    @Path("/refresh")
+    public Uni<Response> refresh(RefreshRequest request) {
+        UUID presented = parseToken(request);
+        if (presented == null) {
+            return Uni.createFrom().item(unauthorized());
+        }
+
+        Instant now = Instant.now();
+        return Panache.withTransaction(() -> refreshTokens.findUsable(presented, now)
+                .flatMap(live -> {
+                    if (live == null) {
+                        return Uni.createFrom().item(unauthorized());
+                    }
+                    // revoke() reports whether it changed a row. A false here means
+                    // another request revoked the same token between the read and this
+                    // write, so this one lost the race and must not also issue a pair.
+                    return refreshTokens.revoke(presented, now).flatMap(revoked -> revoked
+                            ? issueSuccessor(live.userId)
+                            : Uni.createFrom().item(unauthorized()));
+                }));
+    }
+
+    private Uni<Response> issueSuccessor(String userId) {
+        return users.findById(userId).flatMap(user -> {
+            // The account can have been deactivated since the token was issued. Access
+            // tokens outlive that by up to their lifespan; refresh must not extend it.
+            if (user == null || !STATUS_ACTIVE.equals(user.status)) {
+                return Uni.createFrom().item(unauthorized());
+            }
+            return tokens.issueFor(user)
+                    .map(session -> Response.ok(RefreshResponse.of(session)).build());
+        });
+    }
+
+    /** Null for anything that is not a UUID, including a missing body or field. */
+    private static UUID parseToken(RefreshRequest request) {
+        if (request == null || request.refreshToken() == null || request.refreshToken().isBlank()) {
+            return null;
+        }
+        try {
+            return UUID.fromString(request.refreshToken().strip());
+        } catch (IllegalArgumentException notAUuid) {
+            return null;
+        }
+    }
+
+    /** components/responses/Unauthorized, which is what this route's 401 references. */
+    private static Response unauthorized() {
+        return Response.status(Response.Status.UNAUTHORIZED)
+                .entity(ErrorResponse.of(ApiMessages.UNAUTHORIZED))
+                .build();
     }
 
     /** paths./api/auth/login.post.responses.401, verbatim. */
