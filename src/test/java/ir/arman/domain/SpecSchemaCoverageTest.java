@@ -194,10 +194,12 @@ class SpecSchemaCoverageTest {
                     "id", "sender_id", "sender_name", "content", "sent_at")));
         });
 
-        // LoginRequest requires studentId and password.
+        // LoginRequest requires studentId and password. RegisterRequest adds name.
+        // `email` is deliberately absent: registration does not collect one, so it is
+        // nullable as of changelog 003 -- see optionalSpecFieldsAreNullableColumns.
         asserter.assertThat(() -> requiredColumns("users"), required -> {
             assertTrue(required.containsAll(Set.of(
-                    "id", "student_id", "name", "email", "password_hash",
+                    "id", "student_id", "name", "password_hash",
                     "role", "theme", "language", "notifications_enabled", "status")));
         });
     }
@@ -218,10 +220,19 @@ class SpecSchemaCoverageTest {
         asserter.assertThat(() -> nullableColumns("chat_messages"),
                 nullable -> assertTrue(nullable.containsAll(Set.of("sender_avatar", "file_url"))));
 
-        // avatar is the only optional field on UserProfile.
+        // avatar and email are the optional fields on UserProfile. UserProfile declares
+        // no `required` list at all, so both are within contract; email became optional
+        // when registration started creating accounts from a name, a student id and a
+        // password only. PUT /api/users/me is what fills it in.
+        asserter.assertThat(() -> nullableColumns("users"),
+                nullable -> assertTrue(nullable.containsAll(Set.of("avatar", "email"))));
+
+        // Nothing else on the account may be optional: an account with no password hash
+        // or no role would be unusable rather than merely incomplete.
         asserter.assertThat(() -> nullableColumns("users"), nullable -> {
-            assertTrue(nullable.contains("avatar"));
-            assertFalse(nullable.contains("email"));
+            assertFalse(nullable.contains("password_hash"));
+            assertFalse(nullable.contains("role"));
+            assertFalse(nullable.contains("student_id"));
         });
     }
 

@@ -18,4 +18,6 @@
     <!-- Guarded by the `seed` context, which only dev and test activate. -->
     <include file="db/changelog/002-seed-data.sql"/>
 
+    <include file="db/changelog/003-optional-email.sql"/>
+
 </databaseChangeLog>

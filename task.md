@@ -8,7 +8,7 @@ Postgres 18.4 · native image for production.
 
 **Working rule:** one task = one commit, message describing what actually changed.
 
-Legend: `[ ]` todo · `[x]` done · `[!]` blocked on a decision
+Legend: `[ ]` todo · `[x]` done · `[~]` partly done · `[!]` blocked on a decision
 
 ---
 
@@ -30,9 +30,11 @@ guessing would mean inventing behaviour the spec does not state.
 - **D5 — `/api/projects/sync` semantics.** Spec says "Bulk Sync" and takes an array of
   full `Project` objects, but does not say whether it upserts, replaces the caller's
   whole project set, or merges by `id`. Blocks: 4.5.
-- **D6 — User provisioning.** There is deliberately no endpoint that creates a user
-  (invite was removed), yet `/api/auth/login` must authenticate someone. Seed via
-  migration, a dev-only seeder, or manual SQL? Blocks: 2.2.
+- ~~**D6 — User provisioning.**~~ **Decided:** self-service registration.
+  `POST /api/auth/register` takes a full name, a student id and a password and returns a
+  signed-in session. Added to `swagger.yaml`, so the spec stays the source of truth.
+  This is not the member invitation that was removed — nobody is invited, and no
+  existing account is involved.
 - **D7 — Central logging target.** `/api/logs` says it writes `/logs/app.log` and
   `/logs/error.log`. Files on the container filesystem, or a DB table? Files vanish on
   container restart unless a volume is added. Blocks: 10.1.
@@ -83,8 +85,9 @@ Every spec property reaches a column and the nullability matches. Four gaps are
 real but belong to later phases — they are places where a bad request currently
 reaches the database and comes back as a 500 instead of the spec's 400:
 
-- `users.email` is UNIQUE, and `PUT /api/users/me` can change it. A duplicate is a
-  constraint violation today. Blocks nothing, but 3.2 must catch it.
+- ~~`users.email` is UNIQUE, and `PUT /api/users/me` can change it.~~ **Handled:**
+  `DataConflictExceptionMapper` turns a unique-constraint violation into `409` instead of
+  `500`. It was written for registration and covers 3.2 as a side effect.
 - Column lengths (`title` 255, `avatar` 1024, …) are unenforced above the database.
   4.2 / 5.2 need `@Size` so over-long input is rejected before the insert.
 - `task_assignees.user_id` is a foreign key. Posting an unknown assignee id is a
@@ -98,15 +101,24 @@ does not list it required — `CreateTaskRequest` does, so no task can exist wit
 
 ## Phase 2 — Authentication
 
-- [ ] 2.1 Password hashing — **bcrypt**, settled by the seed, which stores a real bcrypt
-      hash. Verification still to wire up, and to confirm in the native image
-- [!] 2.2 User seeding — *needs D6.* Dev and test have 30 seeded accounts; production
-      has none, and no endpoint creates one
+- [x] 2.1 Password hashing — **bcrypt** via `PasswordService`. Hashing and verification
+      both run on the worker pool: bcrypt is tens of milliseconds of CPU by design, and
+      on an event loop that is every other request's latency. `PasswordService` hands the
+      result back on the originating Vert.x context so the Hibernate session survives the
+      trip. Verified against the seeded hashes. Native-image confirmation still owed, 11.2
+- [x] 2.2 User provisioning — `POST /api/auth/register` (name, studentId, password) →
+      `201` with the same `LoginResponse` the login route returns, so registering signs
+      you in. Duplicate student id → `409`. Every new account is a `student`; the API
+      grants `admin` nowhere
 - [ ] 2.3 `POST /api/auth/login` → `LoginResponse` (accessToken, refreshToken, user);
       `401` on bad credentials. Seeded credentials: `99100111` / `Password123`
 - [ ] 2.4 `POST /api/auth/refresh` → new token pair; `401` when invalid. Rotates:
       `RefreshTokenRepository.revoke` retires the presented token as the new one is issued
-- [ ] 2.5 JWT signing keys + `BearerAuth` wiring; RBAC for `admin` / `student`
+- [~] 2.5 JWT signing keys + `BearerAuth` wiring; RBAC for `admin` / `student`.
+      **Half done:** an RSA keypair signs and verifies (committed dev/test pair,
+      `JWT_PRIVATE_KEY_LOCATION` / `JWT_PUBLIC_KEY_LOCATION` in prod), and `TokenService`
+      issues tokens carrying the role in `groups`. Nothing *enforces* it yet — no endpoint
+      is annotated, so the tokens are issued and verifiable but not required anywhere
 - [ ] 2.6 `401` mapper returns the spec's exact `Unauthorized` body
 
 ## Phase 3 — User profile
@@ -138,7 +150,8 @@ does not list it required — `CreateTaskRequest` does, so no task can exist wit
 
 ## Phase 7 — Team members
 
-- [ ] 7.1 `GET /api/members` (read-only; no provisioning endpoint by design)
+- [ ] 7.1 `GET /api/members` (read-only: members arrive by registering themselves,
+      not by being added here)
 
 ## Phase 8 — Live chat
 
@@ -177,3 +190,8 @@ does not list it required — `CreateTaskRequest` does, so no task can exist wit
 ## Not in scope (removed from the spec deliberately)
 
 2FA · password recovery · email/SMS delivery · member invitation. See commit `e760f9d`.
+
+`POST /api/auth/register` is not a reintroduction of member invitation. Invitation meant
+an existing user causing an account to be created for someone else, and needed the email
+delivery that was also removed. Registration is a stranger creating their own account,
+touching nobody else's, and sending nothing.

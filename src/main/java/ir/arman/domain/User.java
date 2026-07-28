@@ -32,7 +32,12 @@ public class User extends PanacheEntityBase {
     @Column(nullable = false)
     public String name;
 
-    @Column(nullable = false, unique = true)
+    /**
+     * Optional: registration collects a name, a student id and a password only, so an
+     * account exists before it has an address. Still unique -- Postgres permits many
+     * NULLs in a unique index. See changelog 003.
+     */
+    @Column(unique = true)
     public String email;
 
     /** Never leaves the domain layer -- no DTO exposes it. */

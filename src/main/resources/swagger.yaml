@@ -38,6 +38,59 @@ tags:
 
 paths:
   # ==================== AUTHENTICATION ====================
+  /api/auth/register:
+    post:
+      tags:
+        - Authentication
+      summary: ثبت‌نام کاربر جدید
+      description: >-
+        ساخت حساب کاربری تازه با نام کامل، شماره دانشجویی و رمز عبور.
+        حساب ساخته‌شده بلافاصله وارد سیستم می‌شود و همان زوج توکن ورود را دریافت می‌کند،
+        بنابراین کلاینت لازم نیست رمز عبور را دوباره ارسال کند.
+        هر حساب تازه نقش «student» می‌گیرد؛ نقش مدیر از این مسیر قابل دریافت نیست.
+        ایمیل در زمان ثبت‌نام گرفته نمی‌شود و بعدا از طریق PUT /api/users/me تکمیل می‌گردد.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+            example:
+              name: "علی محمدی"
+              studentId: "99100111"
+              password: "Password123"
+      responses:
+        '201':
+          description: حساب کاربری ساخته شد و کاربر وارد سیستم شد
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+              example:
+                accessToken: "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..."
+                refreshToken: "d8f3a1e2-4b5c-6d7e-8f9a-0b1c2d3e4f5a"
+                user:
+                  id: "usr_131"
+                  studentId: "99100111"
+                  name: "علی محمدی"
+                  email: null
+                  role: "student"
+                  avatar: null
+                  theme: "light"
+                  language: "fa"
+                  notificationsEnabled: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          description: این شماره دانشجویی قبلا ثبت شده است
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                message: "این شماره دانشجویی قبلا ثبت شده است."
+
   /api/auth/login:
     post:
       tags:
@@ -603,6 +656,29 @@ components:
       description: توکن دسترسی JWT صادر شده در پاسخ ورود
 
   schemas:
+    RegisterRequest:
+      type: object
+      required:
+        - name
+        - studentId
+        - password
+      properties:
+        name:
+          type: string
+          maxLength: 255
+          description: نام و نام خانوادگی کاربر
+        studentId:
+          type: string
+          maxLength: 64
+          description: شماره دانشجویی یا نام کاربری، باید یکتا باشد
+        password:
+          type: string
+          format: password
+          minLength: 8
+          maxLength: 72
+          description: >-
+            حداقل هشت نویسه. سقف ۷۲ نویسه محدودیت الگوریتم bcrypt است، نه سیاست امنیتی.
+
     LoginRequest:
       type: object
       required:
@@ -636,7 +712,9 @@ components:
         name:
           type: string
         email:
-          type: string
+          # null until the user supplies one: ثبت‌نام فقط نام، شماره دانشجویی و رمز
+          # عبور می‌گیرد، و ایمیل بعدا از طریق PUT /api/users/me تکمیل می‌شود.
+          type: [string, "null"]
           format: email
         role:
           type: string
