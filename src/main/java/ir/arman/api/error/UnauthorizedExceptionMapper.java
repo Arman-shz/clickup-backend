@@ -2,6 +2,7 @@ package ir.arman.api.error;
 
 import io.quarkus.security.UnauthorizedException;
 import ir.arman.api.dto.ErrorResponse;
+import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.ext.ExceptionMapper;
 import jakarta.ws.rs.ext.Provider;
@@ -20,6 +21,7 @@ public class UnauthorizedExceptionMapper implements ExceptionMapper<Unauthorized
     public Response toResponse(UnauthorizedException exception) {
         return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(ErrorResponse.of(ApiMessages.UNAUTHORIZED))
+                .type(MediaType.APPLICATION_JSON)
                 .build();
     }
 }

@@ -110,16 +110,44 @@ does not list it required — `CreateTaskRequest` does, so no task can exist wit
       `201` with the same `LoginResponse` the login route returns, so registering signs
       you in. Duplicate student id → `409`. Every new account is a `student`; the API
       grants `admin` nowhere
-- [ ] 2.3 `POST /api/auth/login` → `LoginResponse` (accessToken, refreshToken, user);
-      `401` on bad credentials. Seeded credentials: `99100111` / `Password123`
-- [ ] 2.4 `POST /api/auth/refresh` → new token pair; `401` when invalid. Rotates:
-      `RefreshTokenRepository.revoke` retires the presented token as the new one is issued
-- [~] 2.5 JWT signing keys + `BearerAuth` wiring; RBAC for `admin` / `student`.
-      **Half done:** an RSA keypair signs and verifies (committed dev/test pair,
-      `JWT_PRIVATE_KEY_LOCATION` / `JWT_PUBLIC_KEY_LOCATION` in prod), and `TokenService`
-      issues tokens carrying the role in `groups`. Nothing *enforces* it yet — no endpoint
-      is annotated, so the tokens are issued and verifiable but not required anywhere
-- [ ] 2.6 `401` mapper returns the spec's exact `Unauthorized` body
+- [x] 2.3 `POST /api/auth/login` → `LoginResponse` (accessToken, refreshToken, user);
+      `401` on bad credentials. Seeded credentials: `99100111` / `Password123`.
+      Verification is the security-jpa provider's, invoked through
+      `IdentityProviderManager` — nothing in this project compares a password
+- [x] 2.4 `POST /api/auth/refresh` → new token pair; `401` when invalid. Rotates:
+      the presented token is revoked in the same transaction that issues its
+      replacement, so each one is spendable exactly once
+- [x] 2.5 JWT signing keys + `BearerAuth` wiring; RBAC for `admin` / `student`.
+      RSA keypair (committed dev/test pair, `JWT_PRIVATE_KEY_LOCATION` /
+      `JWT_PUBLIC_KEY_LOCATION` in prod), role carried in `groups`, `@RolesAllowed`
+      verified against both roles. **The spec restricts nothing to `admin`** — the word
+      appears only as a `role` value — so there is no differential rule to enforce, and
+      inventing one would change documented behaviour
+- [x] 2.6 `401` mapper returns the spec's exact `Unauthorized` body
+
+**Phase 2 complete.** `AuthResourceTest`, `LoginTest`, `RefreshTest` and `BearerAuthTest`
+cover it; `ProtectedProbeResource` exists only on the test classpath, because the first
+endpoint the spec actually protects arrives in 3.1.
+
+### What phase 2 turned up
+
+- **Two writes were being dropped silently.** With `@WithTransaction` on `login`, the
+  refresh token row was never inserted: the identity provider runs its own session, and
+  work resumed after it is not inside a transaction opened before it. The response still
+  looked right, because the token is a UUID minted in Java — only a test that counted
+  rows caught it. Anything writing after an `authenticate()` call must open its
+  transaction afterwards.
+- **Error bodies were content-type dependent.** The mappers built an `ErrorResponse` but
+  let JAX-RS negotiate the type, so a resource declaring `text/plain` answered a 401 with
+  the record's `toString`. All five mappers now pin `application/json`.
+- **`quarkus.http.auth.basic=false` is load-bearing.** security-jpa contributes a
+  username/password identity provider, which is enough for Quarkus to offer HTTP Basic.
+  A second, undocumented way in — one that ships credentials on every request — would
+  bypass refresh-token rotation entirely.
+- **Deactivation is honoured, and that is an interpretation.** `TeamMember.status` has no
+  enum and no endpoint that writes it, so it can only be set against the database by an
+  operator shutting an account down. Login and refresh both refuse a non-`active` account;
+  ignoring it would make that act do nothing at all.
 
 ## Phase 3 — User profile
 

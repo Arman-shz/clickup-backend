@@ -4,6 +4,7 @@ import ir.arman.api.dto.ErrorResponse;
 import jakarta.annotation.Priority;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
+import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.ext.ExceptionMapper;
 import jakarta.ws.rs.ext.Provider;
@@ -31,6 +32,7 @@ public class ValidationExceptionMapper implements ExceptionMapper<ConstraintViol
 
         return Response.status(Response.Status.BAD_REQUEST)
                 .entity(ErrorResponse.of(ApiMessages.BAD_REQUEST, errors))
+                .type(MediaType.APPLICATION_JSON)
                 .build();
     }
 
