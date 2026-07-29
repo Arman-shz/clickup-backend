@@ -1,5 +1,6 @@
 package ir.arman.api.dto;
 
+import io.quarkus.runtime.annotations.RegisterForReflection;
 /**
  * The spec's LoginResponse schema (swagger.yaml, components/schemas/LoginResponse).
  *
@@ -10,6 +11,7 @@ package ir.arman.api.dto;
  * {@code refreshToken} is an opaque UUID and means nothing except as a row in
  * {@code refresh_tokens} -- which is what makes it revocable.
  */
+@RegisterForReflection
 public record LoginResponse(
         String accessToken,
         String refreshToken,

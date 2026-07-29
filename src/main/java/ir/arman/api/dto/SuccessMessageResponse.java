@@ -1,9 +1,11 @@
 package ir.arman.api.dto;
 
+import io.quarkus.runtime.annotations.RegisterForReflection;
 /**
  * The spec's SuccessMessageResponse schema
  * (swagger.yaml, components/schemas/SuccessMessageResponse).
  */
+@RegisterForReflection
 public record SuccessMessageResponse(boolean success, String message) {
 
     /** The spec's default success body: "عملیات با موفقیت انجام شد." */

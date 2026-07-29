@@ -1,5 +1,6 @@
 package ir.arman.api.dto;
 
+import io.quarkus.runtime.annotations.RegisterForReflection;
 /**
  * The inline request body of POST /api/auth/refresh
  * (swagger.yaml, paths./api/auth/refresh.post.requestBody).
@@ -9,5 +10,6 @@ package ir.arman.api.dto;
  * expired or revoked one rather than as a 400 the spec does not describe. Contrast
  * {@link LoginRequest}, whose route does document a 400.
  */
+@RegisterForReflection
 public record RefreshRequest(String refreshToken) {
 }

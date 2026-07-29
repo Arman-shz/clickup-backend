@@ -1,5 +1,6 @@
 package ir.arman.api.dto;
 
+import io.quarkus.runtime.annotations.RegisterForReflection;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
@@ -13,6 +14,7 @@ import jakarta.validation.constraints.Size;
  * <p>The maximum lengths are the column widths from changelog 001, enforced here so an
  * over-long value is a documented 400 rather than a constraint violation at insert time.
  */
+@RegisterForReflection
 public record RegisterRequest(
 
         @NotBlank

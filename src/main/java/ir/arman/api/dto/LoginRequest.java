@@ -1,5 +1,6 @@
 package ir.arman.api.dto;
 
+import io.quarkus.runtime.annotations.RegisterForReflection;
 import jakarta.validation.constraints.NotBlank;
 
 /**
@@ -11,6 +12,7 @@ import jakarta.validation.constraints.NotBlank;
  * that and a 401 tells an unauthenticated caller which shapes of student id exist. It
  * would also lock out any account whose password predates the current rules.
  */
+@RegisterForReflection
 public record LoginRequest(
 
         @NotBlank

@@ -6,7 +6,6 @@ import ir.arman.domain.User;
 import ir.arman.domain.WeeklyReport;
 import jakarta.enterprise.context.ApplicationScoped;
 
-import java.time.Instant;
 import java.util.List;
 
 @ApplicationScoped
@@ -45,7 +44,7 @@ public class WeeklyReportRepository extends PrefixedIdRepository<WeeklyReport> {
             report.id = id;
             report.userId = author.id;
             report.userName = author.name;
-            report.submittedAt = Instant.now();
+            report.submittedAt = now();
             return persist(report);
         });
     }

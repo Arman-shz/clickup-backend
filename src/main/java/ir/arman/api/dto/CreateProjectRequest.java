@@ -1,5 +1,6 @@
 package ir.arman.api.dto;
 
+import io.quarkus.runtime.annotations.RegisterForReflection;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
@@ -18,6 +19,7 @@ import jakarta.validation.constraints.Size;
  * reaches Postgres and comes back as a 500 instead of the 400 the spec documents.
  * {@code description} is a TEXT column and so carries no limit here either.
  */
+@RegisterForReflection
 public record CreateProjectRequest(
 
         @NotBlank

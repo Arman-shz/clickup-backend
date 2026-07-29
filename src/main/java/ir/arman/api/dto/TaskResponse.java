@@ -1,5 +1,6 @@
 package ir.arman.api.dto;
 
+import io.quarkus.runtime.annotations.RegisterForReflection;
 import ir.arman.domain.Task;
 import ir.arman.domain.TaskPriority;
 import ir.arman.domain.TaskStatus;
@@ -23,6 +24,7 @@ import java.util.List;
  * so a value outside the documented set cannot leave this API even if one reached the
  * column.
  */
+@RegisterForReflection
 public record TaskResponse(
         String id,
         String projectId,

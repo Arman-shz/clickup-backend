@@ -5,7 +5,6 @@ import io.smallrye.mutiny.Uni;
 import ir.arman.domain.User;
 import jakarta.enterprise.context.ApplicationScoped;
 
-import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Set;
@@ -68,7 +67,7 @@ public class UserRepository extends PrefixedIdRepository<User> {
     public Uni<User> create(User user) {
         return nextId().flatMap(id -> {
             user.id = id;
-            user.createdAt = Instant.now();
+            user.createdAt = now();
             return persist(user);
         });
     }

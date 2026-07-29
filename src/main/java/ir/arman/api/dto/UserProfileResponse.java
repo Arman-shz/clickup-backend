@@ -1,5 +1,6 @@
 package ir.arman.api.dto;
 
+import io.quarkus.runtime.annotations.RegisterForReflection;
 import ir.arman.domain.User;
 
 /**
@@ -13,6 +14,7 @@ import ir.arman.domain.User;
  * registered account has no address yet. The spec's UserProfile declares no required
  * properties, so that is within contract.
  */
+@RegisterForReflection
 public record UserProfileResponse(
         String id,
         String studentId,

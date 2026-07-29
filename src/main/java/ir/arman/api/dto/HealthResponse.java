@@ -1,9 +1,11 @@
 package ir.arman.api.dto;
 
+import io.quarkus.runtime.annotations.RegisterForReflection;
 /**
  * The inline response schema of GET /api/health (swagger.yaml, paths./api/health).
  * Field order matches the spec: status, timestamp, database.
  */
+@RegisterForReflection
 public record HealthResponse(String status, String timestamp, String database) {
 
     public static final String STATUS_OK = "ok";

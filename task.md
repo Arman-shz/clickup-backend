@@ -324,11 +324,73 @@ and all five seeded tables are as the changelog left them.
 
 ## Phase 8 — Live chat
 
-- [ ] 8.1 `GET /api/chat/messages`
-- [ ] 8.2 `POST /api/chat/messages` → `201`
-- [ ] 8.3 `GET /api/chat/stream` — SSE `text/event-stream` returning `Multi<ChatMessage>`
-- [ ] 8.4 Broadcast new messages to connected SSE clients
-- [ ] 8.5 Verify SSE survives the native image build
+- [x] 8.1 `GET /api/chat/messages` → oldest first, the order a transcript is read in and
+      the one `idx_chat_messages_sent_at` serves. One room: `ChatMessage` declares no
+      channel and no recipient, so every account reads and writes the same conversation
+- [x] 8.2 `POST /api/chat/messages` → `201`, stamping the sender, their name, their avatar
+      and the time. None of them is in the request body, so a message cannot be sent under
+      someone else's name or backdated
+- [x] 8.3 `GET /api/chat/stream` — SSE `text/event-stream` returning
+      `Multi<ChatMessageResponse>`, **behind the same token as everything else**. The spec
+      omits the `security` block on this one route, but it serves the messages
+      `/api/chat/messages` refuses without a token, so leaving it open would have made
+      that `401` decorative. Decision recorded on the route in Persian as well as here.
+      The cost lands on the frontend: the browser's native `EventSource` cannot send an
+      `Authorization` header, so the client needs a `fetch`-based SSE reader
+- [x] 8.4 Broadcast new messages to connected SSE clients — after the commit, not inside
+      the transaction, so nobody is shown a message the database then refused
+- [x] 8.5 Verify SSE survives the native image build — `ChatStreamIT`, deliberately
+      narrower than the `@QuarkusTest`: an event reaches a client through a different
+      message-body writer than a plain JSON response, and only a real run settles whether
+      the record still serialises without a JIT to fall back on
+
+**Phase 8 complete.** `ChatResourceTest` (26) and `ChatStreamTest` (14) cover it; 261 tests
+green and all five seeded tables as the changelog left them. `mvn verify -Dnative` builds
+the image in ~2m45s and the 6 integration tests pass against the binary — the first time
+they have ever run.
+
+### What phase 8 turned up
+
+- **The same instant reached the client in two shapes** — the same defect as phase 6's
+  `hoursWorked`, in a different column. `Instant.now()` resolves to nanoseconds and every
+  `TIMESTAMPTZ` stores microseconds, so a `201` echoed `…546791146Z` while every later read
+  returned `…546791Z`. It was **not only chat**: `projects.created_at`, `users.created_at`
+  and `weekly_reports.submitted_at` were all stamped the same way, so registration, project
+  creation, project sync and report submission each returned a timestamp no subsequent read
+  would ever match. Fixed in one place — `PrefixedIdRepository.now()` truncates to
+  microseconds — and asserted by comparing the `201` to the stored row property for
+  property.
+- **The seeded conversation is dated in the future.** The 30 messages run from 2026-08-08
+  to 2026-09-07, ahead of the clock, so a message sent now sorts into the middle of them
+  rather than at the end. Nothing is wrong with the ordering; a test that assumed "newest
+  is last" was wrong and now says why.
+- **The integration tests cannot boot, and never could.** `mvn verify -DskipITs=false`
+  fails before a single test runs: the `prod` profile resolves `TLS_KEYSTORE_PATH`,
+  `TLS_KEYSTORE_PASSWORD`, `JWT_PRIVATE_KEY_LOCATION` and `JWT_PUBLIC_KEY_LOCATION` from
+  the environment, and nothing supplies them. `HealthResourceIT` has the same failure, so
+  this predates chat; it is invisible because `skipITs` is on by default. 8.5 was verified
+  by passing the dev material in as environment variables for that one run — deciding
+  where production's keys actually come from is **11.4**, and it is what unblocks the ITs
+  for good. Note for 11.4: the path must be a *filesystem* path. `tls/dev-keystore.p12`
+  resolves on the JVM because it is on the classpath; the native image cannot read it that
+  way and dies at startup with `NoSuchFileException`.
+- **The native image served a 500 on nearly every route, and had done since phase 2.**
+  Jackson could not serialise a single DTO: `No serializer found for class
+  …HealthResponse and no properties discovered to create BeanSerializer`. The cause is
+  that 22 of the 25 routes return `Uni<Response>` — the same method answers with a DTO or
+  with an `ErrorResponse`, and `Response` names neither — so the build had no type to
+  register for reflection. Only the three routes declaring `Uni<List<…>>` worked. This is
+  **11.2**, brought forward because 8.5 could not be verified without it: the chat stream
+  IT failed at *login*, nothing to do with SSE. Fixed by annotating every type in
+  `ir.arman.api.dto`, with the reasoning in that package's `package-info.java`.
+- **Nothing in the JVM suite could have caught either of those.** 261 green tests say
+  nothing about the artifact that actually ships. The ITs are the only thing that runs the
+  packaged binary, and they are off by default.
+- **The broadcast reaches one process only.** Two instances behind a load balancer would
+  each serve only the clients connected to them. Making it work would mean the message
+  travelling through Postgres `LISTEN`/`NOTIFY` or a broker rather than a field on a bean —
+  out of scope while the target is a single container, but it is the first thing that
+  breaks on the second replica.
 
 ## Phase 9 — File upload
 
@@ -341,8 +403,15 @@ and all five seeded tables are as the changelog left them.
 
 ## Phase 11 — Production build
 
-- [ ] 11.1 `./mvnw package -Dnative` with local GraalVM 25
-- [ ] 11.2 Register reflection for entities/DTOs as native build requires
+- [ ] 11.1 `./mvnw package -Dnative` with local GraalVM 25 — the build itself already
+      works (`mvn verify -Dnative`, Oracle GraalVM 25.0.3, ~2m30s); what is left here is
+      making it run without the dev key material passed in by hand, which is 11.4
+- [x] 11.2 Register reflection for entities/DTOs as native build requires — done early,
+      under phase 8: 8.5 could not be verified while the native image answered every route
+      with a 500. `@RegisterForReflection` on all 20 records in `ir.arman.api.dto`, and
+      `package-info.java` there says why. Entities need nothing: the Hibernate extension
+      registers them, and nothing serialises one directly.
+      **A DTO added later needs the annotation too**
 - [ ] 11.3 Build the native container image from `Dockerfile.native`
       (note: pulls a UBI base image — Docker Hub pulls are currently unreliable here)
 - [ ] 11.4 Runtime datasource config via env vars, no baked-in credentials

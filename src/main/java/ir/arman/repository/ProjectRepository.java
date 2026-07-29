@@ -5,7 +5,6 @@ import io.smallrye.mutiny.Uni;
 import ir.arman.domain.Project;
 import jakarta.enterprise.context.ApplicationScoped;
 
-import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.regex.Matcher;
@@ -36,7 +35,7 @@ public class ProjectRepository extends PrefixedIdRepository<Project> {
     public Uni<Project> create(Project project) {
         return nextId().flatMap(id -> {
             project.id = id;
-            project.createdAt = Instant.now();
+            project.createdAt = now();
             return persist(project);
         });
     }
@@ -68,7 +67,7 @@ public class ProjectRepository extends PrefixedIdRepository<Project> {
      * cannot rewind it and start handing out ids that are already taken.
      */
     public Uni<Project> insertWithClientId(Project project) {
-        project.createdAt = Instant.now();
+        project.createdAt = now();
         return persist(project).flatMap(persisted -> reserve(project.id).replaceWith(persisted));
     }
 

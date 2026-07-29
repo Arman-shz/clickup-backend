@@ -6,7 +6,6 @@ import ir.arman.domain.ChatMessage;
 import ir.arman.domain.User;
 import jakarta.enterprise.context.ApplicationScoped;
 
-import java.time.Instant;
 import java.util.List;
 
 @ApplicationScoped
@@ -38,7 +37,7 @@ public class ChatMessageRepository extends PrefixedIdRepository<ChatMessage> {
             message.senderId = sender.id;
             message.senderName = sender.name;
             message.senderAvatar = sender.avatar;
-            message.sentAt = Instant.now();
+            message.sentAt = now();
             return persist(message);
         });
     }

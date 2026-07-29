@@ -641,6 +641,14 @@ paths:
       tags:
         - Live Chat
       summary: دریافت سابقه پیام‌های چت تیمی
+      description: |
+        چت یک اتاق مشترک است: در مدل `ChatMessage` نه کانال تعریف شده و نه گیرنده،
+        پس همه کاربران یک گفتگو را می‌خوانند و در همان می‌نویسند.
+
+        ترتیب: از قدیمی‌ترین به تازه‌ترین — یک رونوشت گفتگو از بالا به پایین خوانده می‌شود.
+
+        کلاینتی که به `/api/chat/stream` وصل می‌شود فقط پیام‌های پس از اتصال را دریافت
+        می‌کند؛ آنچه از دست داده را از همین مسیر می‌گیرد.
       security:
         - BearerAuth: []
       responses:
@@ -651,11 +659,20 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/ChatMessage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
 
     post:
       tags:
         - Live Chat
       summary: ارسال پیام جدید در چت
+      description: |
+        فرستنده از توکن برداشته می‌شود، نه از بدنه‌ی درخواست؛ همچنین `id`، نام و آواتار
+        فرستنده و زمان ارسال را سرور مهر می‌زند. بنابراین ارسال پیام به نام شخص دیگر یا
+        با تاریخ گذشته ممکن نیست.
+
+        پیام پس از ثبت شدن در پایگاه داده — و نه پیش از آن — برای همه‌ی اتصال‌های باز
+        `/api/chat/stream` منتشر می‌شود.
       security:
         - BearerAuth: []
       requestBody:
@@ -663,14 +680,7 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              required:
-                - content
-              properties:
-                content:
-                  type: string
-                fileUrl:
-                  type: string
+              $ref: '#/components/schemas/SendMessageRequest'
             example:
               content: "سلام همکاران گرامی، گزارش این هفته ثبت شد."
       responses:
@@ -679,13 +689,32 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ChatMessage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
 
   /api/chat/stream:
     get:
       tags:
         - Live Chat
       summary: استریم زنده پیام‌های چت (SSE - Server-Sent Events)
-      description: اتصال بلندمدت (HTTP Connection) جهت دریافت لحظه‌ای پیام‌های جدید بدون رفرش مرورگر.
+      description: |
+        اتصال بلندمدت (HTTP Connection) جهت دریافت لحظه‌ای پیام‌های جدید بدون رفرش مرورگر.
+        بدنه‌ی هر رویداد دقیقاً همان `ChatMessage` مسیرهای دیگر است، تا کلاینت برای
+        پیام زنده و پیام بایگانی‌شده به دو تحلیل‌گر جداگانه نیاز نداشته باشد.
+
+        **این مسیر هم مانند بقیه توکن می‌خواهد.** در متن اولیه‌ی مشخصات بلوک `security`
+        برای این مسیر نیامده بود، ولی همان پیام‌هایی را می‌فرستد که
+        `/api/chat/messages` بدون توکن نمی‌دهد؛ باز گذاشتنش پاسخ ۴۰۱ آن مسیر را
+        بی‌اثر می‌کرد. این یک تصمیم ثبت‌شده است.
+
+        هزینه‌اش سمت کلاینت است: `EventSource` مرورگر نمی‌تواند هدر `Authorization`
+        بفرستد، پس فرانت‌اند باید از یک خواننده‌ی SSE مبتنی بر `fetch` استفاده کند.
+
+        فقط پیام‌های پس از برقراری اتصال ارسال می‌شوند؛ چیزی بازپخش نمی‌شود.
+      security:
+        - BearerAuth: []
       responses:
         '200':
           description: جریان زنده رویدادها (text/event-stream)
@@ -694,6 +723,8 @@ paths:
               schema:
                 type: string
                 example: "data: {\"id\":\"msg_201\",\"senderName\":\"علی\",\"content\":\"سلام!\",\"timestamp\":\"2026-07-28T10:00:00Z\"}\n\n"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
 
   # ==================== FILE UPLOAD ====================
   /api/upload:
@@ -1108,21 +1139,54 @@ components:
 
     ChatMessage:
       type: object
+      required:
+        - id
+        - senderId
+        - senderName
+        - content
+        - timestamp
       properties:
         id:
           type: string
+          maxLength: 64
         senderId:
           type: string
+          maxLength: 64
         senderName:
           type: string
+          maxLength: 255
+          description: |
+            نام فرستنده در لحظه‌ی ارسال، روی خود پیام نگهداری می‌شود. اگر بعداً نامش را
+            عوض کند، آنچه در تاریخچه نوشته شده تغییر نمی‌کند.
         senderAvatar:
-          type: string
+          type: [string, "null"]
+          maxLength: 1024
         content:
           type: string
+          minLength: 1
         fileUrl:
-          type: string
+          type: [string, "null"]
+          maxLength: 1024
         timestamp:
           type: string
+          format: date-time
+          description: زمان ارسال، به شکل ISO-8601 (ستون `sent_at`).
+
+    SendMessageRequest:
+      type: object
+      required:
+        - content
+      properties:
+        content:
+          type: string
+          minLength: 1
+          description: نمی‌تواند خالی یا فقط فاصله باشد.
+        fileUrl:
+          type: [string, "null"]
+          maxLength: 1024
+          description: |
+            نشانی فایلی که `POST /api/upload` برمی‌گرداند. اینجا چیزی دریافت یا بررسی
+            نمی‌شود.
 
     TeamMember:
       type: object

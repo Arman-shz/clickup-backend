@@ -1,5 +1,6 @@
 package ir.arman.api.dto;
 
+import io.quarkus.runtime.annotations.RegisterForReflection;
 import ir.arman.domain.WeeklyReport;
 
 import java.math.BigDecimal;
@@ -19,6 +20,7 @@ import java.time.format.DateTimeFormatter;
  * <p>{@code hoursWorked} is a BigDecimal because the column is NUMERIC(6,2) and the spec
  * types it {@code number}: half hours are ordinary, and a double would round them.
  */
+@RegisterForReflection
 public record WeeklyReportResponse(
         String id,
         String userId,

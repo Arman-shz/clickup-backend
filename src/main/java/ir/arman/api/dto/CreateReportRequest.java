@@ -1,5 +1,6 @@
 package ir.arman.api.dto;
 
+import io.quarkus.runtime.annotations.RegisterForReflection;
 import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -27,6 +28,7 @@ import java.math.BigDecimal;
  * the title names and nothing in the spec says otherwise, so refusing 200 would be
  * inventing a rule.
  */
+@RegisterForReflection
 public record CreateReportRequest(
 
         @NotBlank

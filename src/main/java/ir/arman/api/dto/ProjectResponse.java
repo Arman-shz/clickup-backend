@@ -1,5 +1,6 @@
 package ir.arman.api.dto;
 
+import io.quarkus.runtime.annotations.RegisterForReflection;
 import ir.arman.domain.Project;
 
 import java.time.format.DateTimeFormatter;
@@ -12,6 +13,7 @@ import java.time.format.DateTimeFormatter;
  * explicitly rather than left to Jackson's Instant handling, which is configurable and
  * would make the wire format depend on a serialisation setting somewhere else.
  */
+@RegisterForReflection
 public record ProjectResponse(
         String id,
         String title,

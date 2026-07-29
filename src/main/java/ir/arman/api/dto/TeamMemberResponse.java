@@ -1,5 +1,6 @@
 package ir.arman.api.dto;
 
+import io.quarkus.runtime.annotations.RegisterForReflection;
 import ir.arman.domain.User;
 
 /**
@@ -17,6 +18,7 @@ import ir.arman.domain.User;
  * <p>{@code status} is a free string rather than an enum because the spec gives it no
  * set of values; the seed uses `active` and `inactive`.
  */
+@RegisterForReflection
 public record TeamMemberResponse(
         String id,
         String name,

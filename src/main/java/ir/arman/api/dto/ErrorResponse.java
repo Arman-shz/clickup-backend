@@ -1,6 +1,7 @@
 package ir.arman.api.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import io.quarkus.runtime.annotations.RegisterForReflection;
 
 import java.util.List;
 
@@ -11,6 +12,7 @@ import java.util.List;
  * match the spec's examples exactly, which carry only {@code success} and {@code message}.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
+@RegisterForReflection
 public record ErrorResponse(boolean success, String message, List<String> errors) {
 
     public static ErrorResponse of(String message) {

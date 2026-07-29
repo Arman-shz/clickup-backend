@@ -1,5 +1,6 @@
 package ir.arman.api.dto;
 
+import io.quarkus.runtime.annotations.RegisterForReflection;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -19,6 +20,7 @@ import java.util.List;
  * now. Honouring a client-supplied value would let any caller backdate a project, and
  * nothing in the spec asks for that.
  */
+@RegisterForReflection
 public record SyncProjectsRequest(
 
         @NotNull

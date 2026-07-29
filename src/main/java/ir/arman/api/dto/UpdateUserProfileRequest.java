@@ -1,5 +1,6 @@
 package ir.arman.api.dto;
 
+import io.quarkus.runtime.annotations.RegisterForReflection;
 import ir.arman.domain.Language;
 import ir.arman.domain.Theme;
 import jakarta.validation.constraints.Email;
@@ -31,6 +32,7 @@ import jakarta.validation.constraints.Size;
  * <p>{@code role} is deliberately absent, matching the spec. An account cannot promote
  * itself.
  */
+@RegisterForReflection
 public record UpdateUserProfileRequest(
 
         // Blank is rejected rather than accepted-and-stored: `name` is NOT NULL and a

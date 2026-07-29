@@ -1,5 +1,6 @@
 package ir.arman.api.dto;
 
+import io.quarkus.runtime.annotations.RegisterForReflection;
 import ir.arman.domain.TaskPriority;
 import ir.arman.domain.TaskStatus;
 import jakarta.validation.constraints.NotBlank;
@@ -33,6 +34,7 @@ import java.util.List;
  * checks they exist before inserting -- an unknown id is the caller's mistake, so it is a
  * 400 with the offending id named, not a constraint violation surfacing as a 500.
  */
+@RegisterForReflection
 public record CreateTaskRequest(
 
         @NotBlank
