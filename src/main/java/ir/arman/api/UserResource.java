@@ -78,8 +78,13 @@ public class UserResource {
             if (user == null) {
                 return Uni.createFrom().item(unauthorized());
             }
+            // requestBody is `required: true` in the spec, so no body at all is a bad
+            // request -- not a no-op update. `{}` is different: it is a valid document
+            // against a schema that requires nothing, and changes nothing.
             if (request == null) {
-                return Uni.createFrom().item(Response.ok(UserProfileResponse.of(user)).build());
+                return Uni.createFrom().item(Response.status(Response.Status.BAD_REQUEST)
+                        .entity(ErrorResponse.of(ApiMessages.BAD_REQUEST))
+                        .build());
             }
 
             String email = strip(request.email());

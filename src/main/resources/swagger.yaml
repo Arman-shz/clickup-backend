@@ -761,17 +761,26 @@ components:
 
     UpdateUserProfileRequest:
       type: object
+      # هیچ فیلدی الزامی نیست و فیلد ارسال‌نشده تغییری نمی‌کند.
+      # حداکثر طول‌ها همان محدودیت ستون‌های جدول users هستند.
       properties:
         name:
           type: string
+          maxLength: 255
+          minLength: 1
         email:
           type: string
+          format: email
+          maxLength: 320
         avatar:
           type: string
+          maxLength: 1024
         theme:
           type: string
+          enum: [light, dark]
         language:
           type: string
+          enum: [fa, en]
         notificationsEnabled:
           type: boolean
 

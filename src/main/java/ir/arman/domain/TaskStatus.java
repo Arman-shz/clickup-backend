@@ -33,7 +33,8 @@ public enum TaskStatus {
                 return status;
             }
         }
-        throw new IllegalArgumentException("Unknown task status: " + value);
+        throw new IllegalArgumentException(
+                "must be one of [todo, in_progress, review, done], was: " + value);
     }
 
     @Converter(autoApply = true)

@@ -30,7 +30,7 @@ public enum TaskPriority {
                 return priority;
             }
         }
-        throw new IllegalArgumentException("Unknown task priority: " + value);
+        throw new IllegalArgumentException("must be one of [low, medium, high], was: " + value);
     }
 
     @Converter(autoApply = true)

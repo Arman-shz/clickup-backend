@@ -29,7 +29,9 @@ public enum Theme {
                 return theme;
             }
         }
-        throw new IllegalArgumentException("Unknown theme: " + value);
+        // The message reaches the client verbatim, inside the 400 that
+        // JsonBindingExceptionMapper builds, so it names what was allowed.
+        throw new IllegalArgumentException("must be one of [light, dark], was: " + value);
     }
 
     @Converter(autoApply = true)

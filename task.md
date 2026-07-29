@@ -164,7 +164,36 @@ endpoint the spec actually protects arrives in 3.1.
       so claiming another account's address is `409` — checked before the write so the
       message can name what collided, with `DataConflictExceptionMapper` behind it for the
       race. `role`, `studentId` and `status` are not in the schema and cannot be sent
-- [ ] 3.3 Enforce enums: `role` admin|student, `theme` light|dark, `language` fa|en
+- [x] 3.3 Enforce enums: `role` admin|student, `theme` light|dark, `language` fa|en.
+      Three layers: the DTOs bind to the enum types so a bad value is refused before any
+      query runs, two exception mappers give that refusal the spec's `400` body, and the
+      `users_*_check` CHECK constraints stay as the last word. `role` is enforced by there
+      being nowhere to send one — no request schema in the spec carries it
+
+**Phase 3 complete.** `UserProfileTest`, `UpdateProfileTest` and `EnumEnforcementTest`
+cover it. 101 tests green, and the 30 seeded rows are exactly as the changelog left them.
+
+### What phase 3 turned up
+
+- **Four different 400s, three of them with no body at all.** The spec has one
+  `BadRequest` shape, and only bean-validation failures were producing it. An unknown enum
+  value and malformed JSON returned `400` with an *empty* body and no content type; a
+  wrong-typed field returned Quarkus's own `{"objectName":…,"attributeName":…,"line":…}`,
+  which names Java classes. Fixed in two places because the failures arrive by two routes:
+  `MismatchedInputException` reaches a mapper intact, while the Jackson reader wraps
+  everything else in a `WebApplicationException` before any mapper is consulted, so
+  `BadRequestBodyMapper` catches that type and rewrites **only** status-400-with-no-entity.
+  It hands 403s and 404s straight back, and there are tests pinning that.
+- **The spec documented one response for a route that has four.** `PUT /api/users/me`
+  listed only `200`, for something behind BearerAuth that takes a body and writes a UNIQUE
+  column. `400`, `401` and `409` are now written down, along with the merge semantics.
+- **The enums' own rejection messages are part of the API now.** They reach the client
+  inside `errors`, so they say what was allowed: `theme: must be one of [light, dark], was:
+  blue`. All five enums were reworded, including `TaskStatus` and `TaskPriority` — the
+  mechanism is shared, so 5.5 inherits it and is left with the task routes themselves.
+- **`role` has no enforcement point because it has no input.** Registration hard-codes
+  `student` and no request schema in the spec carries a role, so the test for it asserts
+  that smuggling one changes nothing rather than that it is rejected.
 
 ## Phase 4 — Projects
 
@@ -180,7 +209,9 @@ endpoint the spec actually protects arrives in 3.1.
 - [ ] 5.2 `POST /api/tasks` → `201`
 - [ ] 5.3 `PUT /api/tasks/{id}` (edit + status change)
 - [ ] 5.4 `DELETE /api/tasks/{id}`
-- [ ] 5.5 Enforce `status` and `priority` enums
+- [ ] 5.5 Enforce `status` and `priority` enums — the mechanism already exists from 3.3
+      (enum-typed DTO properties plus the 400 mappers); what is left is applying it to the
+      task routes and their query filters
 
 ## Phase 6 — Weekly reports
 

@@ -32,7 +32,7 @@ public enum Role {
                 return role;
             }
         }
-        throw new IllegalArgumentException("Unknown role: " + value);
+        throw new IllegalArgumentException("must be one of [admin, student], was: " + value);
     }
 
     /** Constant names are upper case, the column is not, so name() cannot be the mapping. */

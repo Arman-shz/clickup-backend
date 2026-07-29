@@ -29,7 +29,7 @@ public enum Language {
                 return language;
             }
         }
-        throw new IllegalArgumentException("Unknown language: " + value);
+        throw new IllegalArgumentException("must be one of [fa, en], was: " + value);
     }
 
     @Converter(autoApply = true)
