@@ -638,10 +638,36 @@ bounded: it means the JVM jar is not shippable as-is.
 
 ## Phase 12 — Tests
 
-- [ ] 12.1 `@QuarkusTest` per resource, asserting the spec's status codes and bodies
-- [ ] 12.2 Test Postgres strategy (Dev Services vs the compose instance)
-- [ ] 12.3 Persian text round-trips through the full HTTP → DB → HTTP path
-- [ ] 12.4 Keep `GreetingResourceIT` equivalent: native integration test coverage
+- [x] 12.1 `@QuarkusTest` per resource, asserting the spec's status codes and bodies. Mostly
+      already true by construction — every phase from 2 onward wrote its resource test
+      alongside the routes. Audited all 24 path+method operations in `swagger.yaml` against
+      every documented status code; one gap found and closed: `PUT /api/projects/{id}`
+      had no test for its `401`, though the sibling `GET`/`POST`/`DELETE` on the same
+      resource did
+- [x] 12.2 Test Postgres strategy — already decided as **D3** in phase 0: the compose
+      Postgres, not Dev Services, because Dev Services would start its own cluster with `C`
+      collation and Persian text would sort correctly in prod and wrongly in dev/test.
+      `quarkus.datasource.devservices.enabled=false`; `%test` points at the same compose
+      instance `%dev` does. Nothing new to build — every test in the suite has depended on
+      this since phase 1
+- [x] 12.3 Persian text round-trips through the full HTTP → DB → HTTP path —
+      `PersianRoundTripTest`. `ChatResourceTest` already proved the write side (a POST
+      against the row Postgres actually stored, over the injected pool); this proves the
+      read side too, on projects, tasks, reports, a profile name and the member directory:
+      POST or PUT over HTTP, then GET over HTTP, on one string carrying a half-space
+      (`نیم‌فاصله`, U+200C) inside a real word, Eastern Arabic-Indic digits and Persian
+      quotation marks — each of which has broken something in this codebase before
+- [x] 12.4 Keep `GreetingResourceIT` equivalent: native integration test coverage —
+      `CoreResourcesIT`. `HealthResourceIT`, `ChatStreamIT` and `UploadAndLogIT` already
+      covered health, chat/SSE, upload and logs against the packaged binary; register,
+      refresh, the profile routes, projects, tasks, reports and members had never run
+      against anything but the JVM. Each is asserted for the exact property set the spec's
+      schema promises — the same class of gap phase 8 found, closed by 11.2's blanket
+      `@RegisterForReflection`, but never actually exercised for these seven routes until now
+
+**Phase 12 complete.** 338 unit tests (was 332), 0 failures. `mvn verify -Dnative`: native
+build plus **16 integration tests pass against the binary** (was 9). The seeded development
+database is exactly as the changelog left it throughout: `30|30|30|30|30|0`.
 
 ---
 

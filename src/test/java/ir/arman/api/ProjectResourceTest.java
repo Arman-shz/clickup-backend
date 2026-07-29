@@ -266,6 +266,19 @@ class ProjectResourceTest {
     }
 
     @Test
+    void updatingNeedsAToken() {
+        String id = createProject("update-unauthenticated");
+
+        given().contentType(ContentType.JSON).body(project("stolen"))
+                .when().put("/api/projects/" + id)
+                .then().statusCode(401).body("message", is(UNAUTHORIZED));
+
+        asAUser().when().get("/api/projects")
+                .then().body("find { it.id == '" + id + "' }.title",
+                        is(MARKER + "update-unauthenticated"));
+    }
+
+    @Test
     void anInvalidBodyIsRejectedBeforeTheProjectIsLookedUp() {
         String id = createProject("unchanged");
 
