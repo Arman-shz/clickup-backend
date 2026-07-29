@@ -282,13 +282,45 @@ green, and the 30 seeded tasks with their 50 assignee rows are as the changelog 
 
 ## Phase 6 — Weekly reports
 
-- [ ] 6.1 `GET /api/reports`
-- [ ] 6.2 `POST /api/reports` → `201`, stamping `userId` / `userName` / `submittedAt`
+- [x] 6.1 `GET /api/reports` → newest first, and **scoped by role**: an `admin` reads
+      every report, anyone else reads only their own. This is the one resource in the spec
+      that has an owner — `Project` and `Task` carry no creator, `WeeklyReport` carries
+      `userId`, and hours worked and challenges are a personal record. The spec does not
+      say so; it is a decision, recorded on the route in Persian as well as here
+- [x] 6.2 `POST /api/reports` → `201`, stamping `userId` / `userName` / `submittedAt`.
+      None of the three is in `CreateReportRequest`, so a report cannot be filed in
+      someone else's name or backdated — asserted by sending all three and watching them
+      be ignored. `userName` is a snapshot, so a later rename does not rewrite history
+
+**Phase 6 complete.** `ReportResourceTest` covers it, from both sides of the role split.
 
 ## Phase 7 — Team members
 
-- [ ] 7.1 `GET /api/members` (read-only: members arrive by registering themselves,
-      not by being added here)
+- [x] 7.1 `GET /api/members` (read-only: members arrive by registering themselves,
+      not by being added here). Every account is listed, inactive ones included — `status`
+      is in the schema, which is only worth sending if the caller is meant to see them.
+      Ordered by name in Postgres' ICU `fa` collation, not in Java
+
+**Phase 7 complete.** `MemberResourceTest` covers it. 221 tests green across both phases,
+and all five seeded tables are as the changelog left them.
+
+### What phases 6 and 7 turned up
+
+- **The same number reached the client in two shapes.** `POST /api/reports` echoed back
+  whatever the client sent — `42` for an integer literal — while a later `GET` rendered
+  `42.00` off the `NUMERIC(6,2)` column. The value is scaled to the column before the
+  `201` is built. A test asserts both routes agree.
+- **The role split has a dead end while registration hard-codes `student`.** The two
+  seeded admins are the only accounts that will ever see the full history; nothing in the
+  API can promote anyone. Worth knowing before a supervisor is expected to use this.
+- **Neither numeric column has a `CHECK`.** `hoursWorked: -40` and `tasksCompleted: -1`
+  were storable and readable. `@PositiveOrZero` is now the only thing stopping them —
+  the constraint belongs in the database too, but the changelog is applied and adding one
+  is a migration rather than an edit.
+- **`GET /api/members` is the only route that must be checked for what it does *not*
+  return.** It reads the same rows `/api/users/me` does, and `TeamMember` is four
+  properties narrower — a directory that leaked `studentId` would be handing out half of
+  everyone's credentials. A test compares the key set of every element exactly.
 
 ## Phase 8 — Live chat
 

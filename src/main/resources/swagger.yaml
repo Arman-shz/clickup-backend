@@ -566,6 +566,20 @@ paths:
       tags:
         - Weekly Reports
       summary: دریافت تاریخچه گزارش‌های هفتگی
+      description: |
+        **پاسخ این مسیر به نقش درخواست‌دهنده بستگی دارد:**
+
+        - نقش `admin` همه گزارش‌ها را می‌بیند.
+        - هر نقش دیگری فقط گزارش‌های خودش را می‌بیند.
+
+        دلیلش این است که گزارش هفتگی — برخلاف پروژه و تسک — مالک دارد (`userId`) و
+        محتوایش (ساعات کارکرد، چالش‌ها) شخصی است. این تفکیک در متن اصلی مشخصات نیامده
+        و یک تصمیم ثبت‌شده است.
+
+        نتیجه عملی: پاسخ این آدرس بین کاربران مختلف یکسان نیست و نباید به صورت مشترک
+        کش شود.
+
+        ترتیب: از تازه‌ترین به قدیمی‌ترین (`submittedAt` نزولی).
       security:
         - BearerAuth: []
       responses:
@@ -576,11 +590,25 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/WeeklyReport'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
 
     post:
       tags:
         - Weekly Reports
       summary: ثبت گزارش کارکرد هفتگی جدید
+      description: |
+        گزارش را به نام دارنده توکن ثبت می‌کند. `userId` و `userName` و `submittedAt`
+        را سرور می‌گذارد و در بدنه درخواست پذیرفته نمی‌شوند — یعنی نمی‌توان گزارشی به
+        نام شخص دیگری یا با تاریخ گذشته ثبت کرد.
+
+        `userName` در همان لحظه از روی حساب کاربری کپی می‌شود و بعدا تغییر نمی‌کند؛
+        گزارش ثبت‌شده یک سند تاریخی است و نامی را نگه می‌دارد که با آن ثبت شده.
+
+        `hoursWorked` و `tasksCompleted` نمی‌توانند منفی باشند. محدودیت بالا ندارند.
+
+        ثبت چند گزارش برای یک هفته ممنوع نیست: `weekTitle` متن آزاد است و مشخصات هیچ
+        یکتایی‌ای برای آن تعریف نکرده.
       security:
         - BearerAuth: []
       requestBody:
@@ -602,6 +630,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/WeeklyReport'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
 
   # ==================== LIVE CHAT ====================
   /api/chat/messages:
@@ -707,6 +739,15 @@ paths:
       tags:
         - Team Members
       summary: دریافت لیست اعضای تیم
+      description: |
+        فهرست همه حساب‌های ثبت‌شده، مرتب‌شده بر اساس نام با ترتیب الفبای فارسی.
+
+        این مسیر فقط خواندنی است و این عمدی است: عضو جدید از راه
+        `POST /api/auth/register` اضافه می‌شود، نه از اینجا.
+
+        کاربران غیرفعال هم در فهرست هستند و با `status` مشخص می‌شوند — حذف آن‌ها از
+        فهرست، این فیلد را بی‌معنی می‌کرد و کسانی را پنهان می‌کرد که هنوز روی تسک‌ها
+        مسئول‌اند.
       security:
         - BearerAuth: []
       responses:
@@ -717,6 +758,8 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/TeamMember'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
 
   # ==================== CENTRAL LOGGING ====================
   /api/logs:
@@ -999,13 +1042,25 @@ components:
 
     WeeklyReport:
       type: object
+      required:
+        - id
+        - userId
+        - userName
+        - weekTitle
+        - hoursWorked
+        - tasksCompleted
+        - submittedAt
       properties:
         id:
           type: string
         userId:
           type: string
+          description: شناسه ثبت‌کننده گزارش. سرور آن را از توکن می‌گذارد.
         userName:
           type: string
+          description: |
+            نام ثبت‌کننده در لحظه ثبت. کپی است، نه ارجاع — تغییر نام حساب کاربری
+            گزارش‌های قبلی را بازنویسی نمی‌کند.
         weekTitle:
           type: string
         hoursWorked:
@@ -1013,13 +1068,16 @@ components:
         tasksCompleted:
           type: integer
         achievements:
-          type: string
+          type: [string, "null"]
         challenges:
-          type: string
+          type: [string, "null"]
         nextWeekPlan:
-          type: string
+          type: [string, "null"]
         submittedAt:
           type: string
+          format: date-time
+          description: زمان ثبت به شکل ISO-8601 و در منطقه زمانی UTC.
+          example: "2026-08-08T14:00:00Z"
 
     CreateReportRequest:
       type: object
@@ -1030,16 +1088,23 @@ components:
       properties:
         weekTitle:
           type: string
+          minLength: 1
+          maxLength: 255
         hoursWorked:
           type: number
+          minimum: 0
+          maximum: 9999.99
+          multipleOf: 0.01
+          description: ساعات کارکرد. اعشار تا دو رقم پذیرفته می‌شود.
         tasksCompleted:
           type: integer
+          minimum: 0
         achievements:
-          type: string
+          type: [string, "null"]
         challenges:
-          type: string
+          type: [string, "null"]
         nextWeekPlan:
-          type: string
+          type: [string, "null"]
 
     ChatMessage:
       type: object
@@ -1061,17 +1126,30 @@ components:
 
     TeamMember:
       type: object
+      required:
+        - id
+        - name
+        - role
+        - status
       properties:
         id:
           type: string
         name:
           type: string
         email:
-          type: string
+          type: [string, "null"]
+          format: email
+          description: |
+            می‌تواند `null` باشد: ثبت‌نام فقط نام و شماره دانشجویی و رمز عبور می‌گیرد،
+            پس حساب کاربری پیش از داشتن ایمیل وجود دارد.
         role:
           type: string
+          enum: [admin, student]
         status:
           type: string
+          description: |
+            مشخصات مقدارهای مجاز را تعیین نکرده، پس متن آزاد است. داده اولیه از
+            `active` و `inactive` استفاده می‌کند.
 
     FileUploadResponse:
       type: object
