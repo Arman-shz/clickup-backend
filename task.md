@@ -27,9 +27,15 @@ guessing would mean inventing behaviour the spec does not state.
 - **D4 — File upload destination.** `/api/upload` returns both a local-looking
   `url: "/uploads/..."` and `cloudMetadata.provider: "Google Cloud Object Storage"`.
   Local disk, real GCS, or local disk with synthesised cloud metadata? Blocks: 9.x.
-- **D5 — `/api/projects/sync` semantics.** Spec says "Bulk Sync" and takes an array of
-  full `Project` objects, but does not say whether it upserts, replaces the caller's
-  whole project set, or merges by `id`. Blocks: 4.5.
+- ~~**D5 — `/api/projects/sync` semantics.**~~ **Decided:** upsert by `id`, delete
+  nothing. A known id is updated, an unknown one is created under the id the client sent,
+  and a project absent from the payload is left alone. The rejected reading — the payload
+  is the complete server state, so remove the rest — is the only one under which the two
+  sides truly converge, but one request from a client holding a stale list would destroy
+  projects and, through the cascade, every task on them, while the response says nothing
+  beyond "success". The cost of the choice, recorded in `swagger.yaml`: a project deleted
+  on the client returns on the next sync, because the server cannot tell "deleted" from
+  "not loaded".
 - ~~**D6 — User provisioning.**~~ **Decided:** self-service registration.
   `POST /api/auth/register` takes a full name, a student id and a password and returns a
   signed-in session. Added to `swagger.yaml`, so the spec stays the source of truth.
@@ -197,11 +203,40 @@ cover it. 101 tests green, and the 30 seeded rows are exactly as the changelog l
 
 ## Phase 4 — Projects
 
-- [ ] 4.1 `GET /api/projects`
-- [ ] 4.2 `POST /api/projects` → `201`
-- [ ] 4.3 `PUT /api/projects/{id}` → `200` / `404`
-- [ ] 4.4 `DELETE /api/projects/{id}` → `200` / `404`
-- [!] 4.5 `POST /api/projects/sync` — *needs D5*
+- [x] 4.1 `GET /api/projects` → the full list, oldest first. **Projects are not owned:**
+      the spec's `Project` has no owner field, `GET` is not scoped, and the document has
+      no membership concept, so every authenticated account sees the same set
+- [x] 4.2 `POST /api/projects` → `201` with a server-assigned `proj_<n>` and `createdAt`.
+      Only `title` is required; the rest come back null
+- [x] 4.3 `PUT /api/projects/{id}` → `200` / `404`. A **replacement**, not a merge —
+      the body is `CreateProjectRequest`, the same schema `POST` uses, so an absent
+      property means the same thing on both routes: null. Sending only a title clears the
+      description, colour and icon. `PUT /api/users/me` merges instead, and the difference
+      is the schemas: that one makes everything optional, this one requires a title, so a
+      caller here is already sending the whole resource. A test on each side says so
+- [x] 4.4 `DELETE /api/projects/{id}` → `200` / `404`. Takes the project's tasks with it
+      via `ON DELETE CASCADE`, asserted rather than assumed
+- [x] 4.5 `POST /api/projects/sync` — upsert by `id`, delete nothing (**D5**). Idempotent
+      because the client's id is honoured; a duplicate id inside one payload is `400`
+      rather than resolved by array order; `createdAt` is accepted and ignored
+
+**Phase 4 complete.** `ProjectResourceTest` and `ProjectSyncTest` cover it. 137 tests
+green, and the 30 seeded projects, tasks and users are exactly as the changelog left them.
+
+### What phase 4 turned up
+
+- **A client-chosen id can poison the id sequence.** `/sync` creates rows under ids the
+  client sent. Sync `proj_900000` and every later `POST /api/projects` keeps counting
+  `proj_44`, `proj_45`, … until it reaches that number and fails on the primary key — a
+  500 from an endpoint that did nothing wrong, months later, with nothing in the request
+  to explain it. `ProjectRepository.insertWithClientId` now pushes the sequence past any
+  `proj_<n>` it stores, with `GREATEST` so it can only ever move forward. Two tests pin it.
+- **Four of the five routes documented no `401`,** and three no `400`, though all five sit
+  behind `BearerAuth` and three take a required body. Written down now.
+- **The spec never fixed a format for `createdAt`** — `type: string`, no format, no
+  example. It is rendered as an ISO-8601 instant explicitly in `ProjectResponse` rather
+  than left to Jackson's `Instant` handling, which is a configurable global and would let
+  the wire format change from somewhere unrelated. A test pins the shape.
 
 ## Phase 5 — Tasks
 

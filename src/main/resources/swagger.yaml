@@ -251,6 +251,10 @@ paths:
       tags:
         - Projects
       summary: دریافت لیست پروژه‌ها
+      description: |
+        پروژه‌ها مالک ندارند: در این سند نه فیلد مالکیت هست و نه مفهوم عضویت،
+        بنابراین هر کاربر احراز هویت‌شده همان فهرست کامل را می‌بیند.
+        ترتیب بر اساس `createdAt`، قدیمی‌ترین اول.
       security:
         - BearerAuth: []
       responses:
@@ -262,6 +266,8 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/Project'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
 
     post:
       tags:
@@ -287,12 +293,24 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Project'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
 
   /api/projects/{id}:
     put:
       tags:
         - Projects
       summary: ویرایش پروژه موجود
+      description: |
+        جایگزینی کامل، نه ادغام. بدنه همان `CreateProjectRequest` مسیر ساخت است،
+        پس فیلد ارسال‌نشده در هر دو مسیر یک معنا دارد: خالی. درخواستی که فقط
+        `title` بفرستد، `description` و `color` و `icon` را پاک می‌کند.
+        (مسیر `PUT /api/users/me` رفتار متفاوتی دارد چون شِمای مخصوص خودش را دارد
+        که هیچ فیلد الزامی ندارد.)
+
+        `id` و `createdAt` در شِمای درخواست نیستند و تغییر نمی‌کنند.
       security:
         - BearerAuth: []
       parameters:
@@ -310,10 +328,15 @@ paths:
               $ref: '#/components/schemas/CreateProjectRequest'
       responses:
         '200':
+          description: پروژه به‌روزرسانی شد
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Project'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
 
@@ -321,6 +344,9 @@ paths:
       tags:
         - Projects
       summary: حذف پروژه
+      description: |
+        کارهای متعلق به این پروژه هم حذف می‌شوند (`ON DELETE CASCADE`)، چون
+        `tasks.project_id` الزامی است و کار بدون پروژه وجود ندارد.
       security:
         - BearerAuth: []
       parameters:
@@ -332,6 +358,8 @@ paths:
       responses:
         '200':
           $ref: '#/components/responses/SuccessMessage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
 
@@ -340,6 +368,18 @@ paths:
       tags:
         - Projects
       summary: همگام‌سازی کلی پروژه‌ها (Bulk Sync)
+      description: |
+        درج یا به‌روزرسانی بر اساس `id`: شناسه‌ای که وجود دارد به‌روزرسانی می‌شود و
+        شناسه‌ای که وجود ندارد با همان شناسهٔ ارسالی ساخته می‌شود. **هیچ پروژه‌ای
+        حذف نمی‌شود**، از جمله پروژه‌هایی که در بدنه نیامده‌اند.
+
+        نتیجه‌اش را صریح می‌گوییم: پروژه‌ای که سمت کلاینت حذف شده باشد، در
+        همگام‌سازی بعدی دوباره برمی‌گردد؛ سرور نمی‌تواند «حذف‌شده» را از
+        «بارگذاری‌نشده» تشخیص دهد. حذف کار مسیر `DELETE /api/projects/{id}` است.
+
+        چون شناسهٔ کلاینت حفظ می‌شود، ارسال دوبارهٔ همان بدنه نتیجهٔ تازه‌ای
+        نمی‌سازد (idempotent). شناسهٔ تکراری در یک بدنه `400` است.
+        `createdAt` پذیرفته و نادیده گرفته می‌شود؛ این مقدار را سرور تعیین می‌کند.
       security:
         - BearerAuth: []
       requestBody:
@@ -358,6 +398,10 @@ paths:
       responses:
         '200':
           $ref: '#/components/responses/SuccessMessage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
 
   # ==================== TASKS ====================
   /api/tasks:
