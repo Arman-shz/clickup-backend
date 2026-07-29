@@ -6,7 +6,9 @@ import ir.arman.domain.User;
 import jakarta.enterprise.context.ApplicationScoped;
 
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
+import java.util.Set;
 
 @ApplicationScoped
 public class UserRepository extends PrefixedIdRepository<User> {
@@ -33,6 +35,26 @@ public class UserRepository extends PrefixedIdRepository<User> {
      */
     public Uni<User> findByEmail(String email) {
         return find("email", email).firstResult();
+    }
+
+    /**
+     * Which of these ids exist -- the assignee check on POST and PUT /api/tasks.
+     *
+     * `task_assignees.user_id` is a foreign key, so an unknown assignee would otherwise
+     * fail as a constraint violation and be reported as a 500 for what is a bad request.
+     * One query for the whole list, and only the ids: loading User rows here would pull
+     * every password hash in the payload into the session for nothing.
+     */
+    public Uni<Set<String>> findExistingIds(Collection<String> ids) {
+        if (ids.isEmpty()) {
+            return Uni.createFrom().item(Set.of());
+        }
+        return getSession()
+                .flatMap(session -> session
+                        .createQuery("SELECT u.id FROM User u WHERE u.id IN :ids", String.class)
+                        .setParameter("ids", ids)
+                        .getResultList())
+                .map(Set::copyOf);
     }
 
     /**

@@ -41,6 +41,15 @@ public class ProjectRepository extends PrefixedIdRepository<Project> {
         });
     }
 
+    /**
+     * Whether a project id refers to anything, for the foreign key POST and PUT
+     * /api/tasks carry in their body. A count rather than a load: the caller only needs
+     * the answer, and the project itself is never read.
+     */
+    public Uni<Boolean> existsById(String id) {
+        return count("id", id).map(found -> found > 0);
+    }
+
     /** The rows POST /api/projects/sync is updating, in one query rather than one each. */
     public Uni<List<Project>> findAllById(Collection<String> ids) {
         return ids.isEmpty()

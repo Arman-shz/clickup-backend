@@ -409,6 +409,18 @@ paths:
       tags:
         - Tasks
       summary: دریافت لیست تسک‌ها
+      description: |
+        همه تسک‌ها را برمی‌گرداند. تسک‌ها مالک ندارند و لیست به کاربر درخواست‌دهنده
+        محدود نمی‌شود.
+
+        دو فیلتر بالا اختیاری و مستقل از هم هستند و در صورت ارسال هر دو، با AND ترکیب
+        می‌شوند. نبودن یک فیلتر یعنی «فیلتر نکن»، نه «مقدارِ خالی را پیدا کن»؛ مقدار
+        خالی (`?projectId=`) هم دقیقا همین معنی را دارد.
+
+        مقدار نامعتبر برای `status` خطای `400` می‌دهد، اما `projectId` ناشناس خطا نیست
+        و فقط لیست خالی برمی‌گرداند — یک فیلتر است، نه جستجوی یک منبع مشخص.
+
+        ترتیب: بر اساس تاریخ سررسید (`dueDate`) و تسک‌های بدون سررسید در انتها.
       security:
         - BearerAuth: []
       parameters:
@@ -424,6 +436,7 @@ paths:
           schema:
             type: string
             enum: [todo, in_progress, review, done]
+          description: فیلتر تسک‌ها بر اساس وضعیت
       responses:
         '200':
           content:
@@ -432,11 +445,25 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/Task'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
 
     post:
       tags:
         - Tasks
       summary: ایجاد تسک جدید
+      description: |
+        تسک جدید می‌سازد و شناسه آن را سرور تعیین می‌کند (`task_<n>`).
+
+        `status` اگر ارسال نشود برابر `todo` در نظر گرفته می‌شود.
+
+        `projectId` و هر شناسه در `assignees` باید از قبل وجود داشته باشند؛ در غیر این
+        صورت پاسخ `400` است و شناسه نادرست در `errors` نام برده می‌شود.
+
+        `dueDate` فقط به شکل `YYYY-MM-DD` پذیرفته می‌شود. ارسال زمان کامل
+        (مثلا `2026-08-15T23:30:00Z`) رد می‌شود و کوتاه نمی‌شود.
       security:
         - BearerAuth: []
       requestBody:
@@ -459,12 +486,30 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Task'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
 
   /api/tasks/{id}:
     put:
       tags:
         - Tasks
       summary: ویرایش یا تغییر وضعیت تسک
+      description: |
+        **جایگزینی کامل است، نه ویرایش جزئی.** بدنه این درخواست همان
+        `CreateTaskRequest` است که `POST` می‌گیرد، پس نبودن یک فیلد در هر دو یک معنی
+        دارد: `null`.
+
+        یعنی برای تغییر وضعیت یک تسک باید **کل تسک** را دوباره بفرستید. درخواستی که فقط
+        `projectId` و `title` و `status` داشته باشد با `200` موفق می‌شود و تسک را بدون
+        توضیح، بدون اولویت، بدون تاریخ سررسید و **بدون هیچ مسئولی** باقی می‌گذارد.
+
+        `id` و ترتیب تسک قابل تغییر نیستند. `projectId` قابل تغییر است: می‌توان تسک را
+        به پروژه دیگری منتقل کرد و پروژه مقصد مثل هر شناسه دیگری بررسی می‌شود.
+
+        اعتبارسنجی بدنه پیش از یافتن تسک انجام می‌شود، پس بدنه نامعتبر برای تسکی که
+        وجود ندارد پاسخ `400` می‌گیرد نه `404`. در هر دو حالت چیزی نوشته نمی‌شود.
       security:
         - BearerAuth: []
       parameters:
@@ -481,15 +526,24 @@ paths:
               $ref: '#/components/schemas/CreateTaskRequest'
       responses:
         '200':
+          description: تسک پس از جایگزینی
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Task'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
 
     delete:
       tags:
         - Tasks
       summary: حذف تسک
+      description: |
+        تسک و ردیف‌های مربوط به مسئولان آن را حذف می‌کند. پروژه دست‌نخورده می‌ماند.
       security:
         - BearerAuth: []
       parameters:
@@ -501,6 +555,10 @@ paths:
       responses:
         '200':
           $ref: '#/components/responses/SuccessMessage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
 
   # ==================== WEEKLY REPORTS ====================
   /api/reports:
@@ -854,19 +912,25 @@ components:
       properties:
         title:
           type: string
+          minLength: 1
+          maxLength: 255
         description:
-          type: string
+          type: [string, "null"]
         color:
-          type: string
+          type: [string, "null"]
+          maxLength: 32
         icon:
-          type: string
+          type: [string, "null"]
+          maxLength: 64
 
     Task:
       type: object
       required:
         - id
+        - projectId
         - title
         - status
+        - assignees
       properties:
         id:
           type: string
@@ -875,19 +939,25 @@ components:
         title:
           type: string
         description:
-          type: string
+          type: [string, "null"]
         status:
           type: string
           enum: [todo, in_progress, review, done]
         priority:
-          type: string
-          enum: [low, medium, high]
+          type: [string, "null"]
+          enum: [low, medium, high, null]
         assignees:
           type: array
+          description: |
+            شناسه کاربران مسئول. همیشه آرایه است و وقتی کسی مسئول نیست `[]` برمی‌گردد،
+            نه `null`. ترتیب آن بخشی از قرارداد نیست.
           items:
             type: string
         dueDate:
-          type: string
+          type: [string, "null"]
+          format: date
+          description: تاریخ سررسید به شکل `YYYY-MM-DD` — تاریخ است، نه زمان.
+          example: "2026-08-15"
 
     CreateTaskRequest:
       type: object
@@ -897,22 +967,35 @@ components:
       properties:
         projectId:
           type: string
+          maxLength: 64
+          description: باید به پروژه‌ای موجود اشاره کند، وگرنه `400`.
         title:
           type: string
+          minLength: 1
+          maxLength: 255
         description:
-          type: string
+          type: [string, "null"]
         status:
           type: string
           enum: [todo, in_progress, review, done]
+          default: todo
         priority:
-          type: string
-          enum: [low, medium, high]
+          type: [string, "null"]
+          enum: [low, medium, high, null]
         assignees:
           type: array
+          description: |
+            شناسه کاربران مسئول. هر شناسه باید کاربری موجود باشد، وگرنه `400`.
+            تکراری‌ها یک بار در نظر گرفته می‌شوند.
           items:
             type: string
         dueDate:
-          type: string
+          type: [string, "null"]
+          format: date
+          description: |
+            فقط به شکل `YYYY-MM-DD`. زمان کامل پذیرفته نمی‌شود و کوتاه هم نمی‌شود،
+            چون حذف بی‌صدای بخش زمان می‌تواند سررسید را تا یک روز جابه‌جا کند.
+          example: "2026-08-15"
 
     WeeklyReport:
       type: object

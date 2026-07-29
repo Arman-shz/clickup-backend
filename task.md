@@ -94,12 +94,14 @@ reaches the database and comes back as a 500 instead of the spec's 400:
 - ~~`users.email` is UNIQUE, and `PUT /api/users/me` can change it.~~ **Handled:**
   `DataConflictExceptionMapper` turns a unique-constraint violation into `409` instead of
   `500`. It was written for registration and covers 3.2 as a side effect.
-- Column lengths (`title` 255, `avatar` 1024, …) are unenforced above the database.
-  4.2 / 5.2 need `@Size` so over-long input is rejected before the insert.
-- `task_assignees.user_id` is a foreign key. Posting an unknown assignee id is a
-  violation, so 5.2 must check the ids exist.
-- `due_date` is a real `DATE` while the spec types `dueDate` as a string. A full
-  datetime string will not parse. 5.2 should reject it explicitly.
+- ~~Column lengths (`title` 255, `avatar` 1024, …) are unenforced above the database.~~
+  **Handled:** `@Size` on every request DTO, in 3.1, 4.2 and 5.2.
+- ~~`task_assignees.user_id` is a foreign key. Posting an unknown assignee id is a
+  violation, so 5.2 must check the ids exist.~~ **Handled:** `TaskResource` checks both
+  foreign keys — `projectId` and every assignee — and answers `400` naming the id.
+- ~~`due_date` is a real `DATE` while the spec types `dueDate` as a string. A full
+  datetime string will not parse.~~ **Handled:** only `YYYY-MM-DD` is accepted; a
+  timestamp is refused rather than truncated.
 
 Two deliberate departures, both recorded in the changelog: tasks cascade when their
 project is deleted, and `tasks.project_id` is NOT NULL even though the `Task` schema
@@ -240,13 +242,43 @@ green, and the 30 seeded projects, tasks and users are exactly as the changelog 
 
 ## Phase 5 — Tasks
 
-- [ ] 5.1 `GET /api/tasks` with optional `projectId` and `status` query filters
-- [ ] 5.2 `POST /api/tasks` → `201`
-- [ ] 5.3 `PUT /api/tasks/{id}` (edit + status change)
-- [ ] 5.4 `DELETE /api/tasks/{id}`
-- [ ] 5.5 Enforce `status` and `priority` enums — the mechanism already exists from 3.3
-      (enum-typed DTO properties plus the 400 mappers); what is left is applying it to the
-      task routes and their query filters
+- [x] 5.1 `GET /api/tasks` with optional `projectId` and `status` query filters. Both are
+      independent and combine with AND; an absent **or empty** one means "do not filter",
+      because `?projectId=` is what a form sends for a filter nobody set. An unknown
+      `projectId` is `[]`, not an error — it is a filter, not a lookup
+- [x] 5.2 `POST /api/tasks` → `201`. `status` defaults to `todo`. Both foreign keys are
+      checked before the insert and every problem in the body is reported at once
+- [x] 5.3 `PUT /api/tasks/{id}` → `200` / `404`. A **replacement**, the same rule as 4.3
+      and for the same reason: the body is `CreateTaskRequest`, the schema `POST` uses.
+      A status change must resend the whole task, or the task is left with no description,
+      no priority, no due date and **nobody assigned**. The spec's summary for this route
+      says "edit or change status", which reads like a partial update — the schema won, and
+      consistency with `PUT /api/projects/{id}` decided it
+- [x] 5.4 `DELETE /api/tasks/{id}` → `200` / `404`. Takes its `task_assignees` rows with
+      it, which is the database's cascade rather than Hibernate's: Panache deletes by id
+      with a bulk statement that never visits the element collection
+- [x] 5.5 Enforce `status` and `priority` enums — on the body through 3.3's mechanism, and
+      on the `status` query parameter by hand, which is the part that needed writing
+
+**Phase 5 complete.** `TaskResourceTest` and `TaskValidationTest` cover it. 188 tests
+green, and the 30 seeded tasks with their 50 assignee rows are as the changelog left them.
+
+### What phase 5 turned up
+
+- **Declaring `status` as the enum on the query parameter would have answered `404`.**
+  JAX-RS turns a query parameter it cannot convert into a not-found, so `?status=archived`
+  would have told a client the endpoint does not exist when what is wrong is the filter.
+  It is read as a `String` and converted by hand for that reason alone.
+- **A Jalali date is a valid Gregorian one.** `1405-05-24` parses without complaint as the
+  year 1405, so nothing here can tell it from a mistake. The API takes Gregorian dates
+  only; converting would mean guessing which calendar was meant. Stated in a test rather
+  than left to be discovered.
+- **A timestamp in `dueDate` is refused, not truncated.** Dropping the time from
+  `2026-08-15T23:30:00Z` moves the deadline by a day for anyone east of UTC, and the
+  response would say `201` either way.
+- **The task schemas documented no `400`, no `401`, no `404` and no lengths**, and neither
+  did `CreateProjectRequest` from phase 4 — that one is fixed here too rather than left
+  inconsistent with the route beside it.
 
 ## Phase 6 — Weekly reports
 
