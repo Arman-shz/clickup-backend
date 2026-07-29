@@ -22,9 +22,18 @@ public class WeeklyReportRepository extends PrefixedIdRepository<WeeklyReport> {
         return WeeklyReport.ID_SEQUENCE;
     }
 
-    /** GET /api/reports -- history, so newest first. */
+    /** GET /api/reports for an admin -- history, so newest first. */
     public Uni<List<WeeklyReport>> listHistory() {
         return listAll(Sort.by("submittedAt").descending());
+    }
+
+    /**
+     * GET /api/reports for everyone else. A weekly report is a personal record, so a
+     * non-admin reads only what they filed themselves -- the decision recorded on
+     * {@code ReportResource}.
+     */
+    public Uni<List<WeeklyReport>> listHistoryFor(String userId) {
+        return list("userId", Sort.by("submittedAt").descending(), userId);
     }
 
     /**
