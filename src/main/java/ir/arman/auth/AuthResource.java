@@ -36,8 +36,8 @@ import java.util.UUID;
 @Produces(MediaType.APPLICATION_JSON)
 public class AuthResource {
 
-    /** TeamMember.status for a usable account. The spec gives the field no enum. */
-    private static final String STATUS_ACTIVE = "active";
+    /** TeamMember.status for a usable account -- see {@link User#STATUS_ACTIVE}. */
+    private static final String STATUS_ACTIVE = User.STATUS_ACTIVE;
 
     @Inject
     UserRepository users;

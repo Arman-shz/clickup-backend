@@ -76,6 +76,31 @@ guessing would mean inventing behaviour the spec does not state.
 - ~~**D8 — Refresh token storage.**~~ **Decided by the spec itself:** the refreshToken
   example is a bare UUID. It carries no signature, so nothing about it can be verified
   without a lookup — it must be persisted. Table `refresh_tokens`.
+- ~~**D10 — How the production image is built.**~~ **Decided:** the image compiles the
+  native binary itself, in a multi-stage build using the Mandrel builder image, so
+  `docker compose up -d --build` works on a machine that has nothing but Docker. The
+  rejected option was the ten-second build that copies a binary produced on the host —
+  faster, and it would ship exactly the binary the integration tests exercised, but
+  `docker compose up -d` on its own would not produce a working image and compose cannot
+  say so: it would build happily around a missing file. Two costs, both real. **The first
+  build takes ten to fifteen minutes** and downloads the whole Maven dependency tree
+  inside the container, because it cannot see the host's `~/.m2`; a BuildKit cache mount
+  makes later builds cheap. And **the image does not contain the binary the ITs ran
+  against** — those use the host's Oracle GraalVM, this uses Mandrel. Same source, same
+  Quarkus, two compilers. `src/main/docker/Dockerfile.native` is kept for the fast path.
+- ~~**D11 — Where the container's key material comes from.**~~ **Decided:** the
+  application generates an RSA-2048 keypair into the mounted keys volume on first start
+  when none is configured (`KeyMaterial`). Unique per deployment, absent from the image,
+  stable across restarts — which is what keeps issued tokens verifiable when the
+  container is replaced. The rejected option was requiring the operator to supply one,
+  which is more honest but means `docker compose up -d` fails on a clean clone with a
+  startup crash naming a missing variable. The cost: **a deployment that never sets
+  `JWT_PRIVATE_KEY_LOCATION` runs forever on a key nobody chose and nobody rotates**, and
+  anyone who can read that volume can forge an access token for any account.
+  Consequence for TLS, decided the other way: no certificate is generated. A self-signed
+  one would buy the appearance of TLS rather than TLS, so **the compose stack terminates
+  none** — it listens on plain 7575 and expects something in front of it. Supplying
+  `QUARKUS_TLS_KEY_STORE_P12_PATH` turns 7443 on.
 
 ---
 
@@ -94,8 +119,11 @@ guessing would mean inventing behaviour the spec does not state.
 - [x] 0.6 Deleted the `/hello` starter resource and its two tests, replaced by
       `HealthResourceTest` / `HealthResourceIT`
 - [x] 0.7 TLS keystore so 7443 binds. Dev/test use a committed self-signed localhost
-      certificate; prod reads `TLS_KEYSTORE_PATH` / `TLS_KEYSTORE_PASSWORD` from the
-      environment and ships no key material.
+      certificate; prod ships no key material at all. **Superseded in phase 11:** prod
+      now declares no keystore property whatsoever, because an absent property is the
+      only way to express "no HTTPS" — an empty value is rejected outright. A deployment
+      that wants 7443 sets `QUARKUS_TLS_KEY_STORE_P12_PATH` and
+      `QUARKUS_TLS_KEY_STORE_P12_PASSWORD` (D11).
 
 **Phase 0 complete.**
 
@@ -516,27 +544,97 @@ full suite 316, 0 failures; database untouched.
 
 ## Phase 11 — Production build
 
-- [ ] 11.1 `./mvnw package -Dnative` with local GraalVM 25 — the build itself already
-      works (`mvn verify -Dnative`, Oracle GraalVM 25.0.3, ~2m30s); what is left here is
-      making it run without the dev key material passed in by hand, which is 11.4
+- [x] 11.1 `mvn package -Dnative` with local GraalVM 25. The build works and the packaged
+      binary now starts on nothing but environment variables — no dev key material, no
+      keystore, no hand-passed file paths
 - [x] 11.2 Register reflection for entities/DTOs as native build requires — done early,
       under phase 8: 8.5 could not be verified while the native image answered every route
       with a 500. `@RegisterForReflection` on all 20 records in `ir.arman.api.dto`, and
       `package-info.java` there says why. Entities need nothing: the Hibernate extension
       registers them, and nothing serialises one directly.
       **A DTO added later needs the annotation too**
-- [ ] 11.3 Build the native container image from `Dockerfile.native`
-      (note: pulls a UBI base image — Docker Hub pulls are currently unreliable here)
-- [ ] 11.4 Runtime datasource config via env vars, no baked-in credentials
-- [ ] 11.5 A mounted volume for `app.upload.directory` and `app.logs.directory`. Both are
-      on the container filesystem by decision (D4, D7), so without this every uploaded
-      file and every client log entry dies with the container. Nothing else in the
-      application notices — the failure is silent
-- [ ] 11.6 A way to create the first admin. Registration hard-codes `student` and the seed
-      changesets are filtered out of production, so a production database has no admin at
-      all. `GET /api/reports` merely narrows for everyone; `POST /api/logs` is admin-only
-      (D9) and is therefore unusable by anybody. Probably a bootstrap account from the
-      environment, applied once at startup
+- [x] 11.3 Native container image, built by `src/main/docker/Dockerfile.native-multistage`
+      and wired into `docker-compose.yml` as the `app` service (D10). The Docker Hub
+      problem turned out to be Docker Hub: the UBI base lives on
+      `registry.access.redhat.com` and pulls fine
+- [x] 11.4 Runtime config via env vars with no baked-in credentials:
+      - the four datasource properties lose their defaults under `%prod`, so a container
+        that is not told where its database is refuses to start instead of quietly
+        trying `clickup`/`clickup`
+      - the JWT keypair comes from a volume, generated on first start if absent (D11)
+      - TLS is declared nowhere in `%prod`; `QUARKUS_TLS_KEY_STORE_P12_PATH` turns it on
+      - the container build deletes `src/main/resources/jwt` and `src/main/resources/tls`
+        before compiling, so the committed dev keypair and dev keystore are **absent from
+        the production image**, not merely unused. This closes the item owed since phase 2
+- [x] 11.5 Three named volumes — `clickup-uploads`, `clickup-logs`, `clickup-keys` — on
+      `/data/uploads`, `/data/logs` and `/data/keys`. The directories are created in the
+      image owned by uid 1001 so that an empty volume inherits that ownership; mounted
+      over a path that did not exist they would arrive owned by root and the application,
+      which never runs as root, could not write a byte
+- [x] 11.6 `AdminBootstrap` creates the first administrator from `ADMIN_STUDENT_ID` and
+      `ADMIN_PASSWORD` at startup. It creates and does not maintain: an account that
+      already exists is left exactly alone, because re-applying the password on every
+      start would undo a deliberate change and leave a compose file as a permanent way
+      in. Setting one variable without the other stops the application rather than
+      starting it half-configured
+
+**Phase 11 complete.** `docker compose up -d --build` builds the native image and starts
+the API next to Postgres, on a machine that has nothing installed but Docker.
+
+### What phase 11 turned up
+
+**The glibc worry was wrong, and only running it said so.** The host builds against glibc
+2.43 and the UBI9 base ships 2.34, which is the classic way a native binary fails to start
+in a container. It starts fine — the binary reached configuration validation on the first
+try. Worth recording because the theory said otherwise and would have justified a musl or
+static build nobody needs.
+
+**Docker Hub was the problem, not Red Hat.** 11.3 carried a note that the UBI pull was
+unreliable. The UBI base is on `registry.access.redhat.com` and pulled first time; what had
+been failing was `docker.io`.
+
+**"No HTTPS" cannot be spelled as an empty variable.** `${TLS_KEYSTORE_PATH:}` resolves to
+the empty string and Quarkus rejects that outright — *"defined as the empty String which
+the following Converter considered to be null"*. The property has to be absent, so `%prod`
+declares no keystore at all and a deployment that wants one supplies Quarkus' own
+`QUARKUS_TLS_KEY_STORE_P12_PATH`.
+
+**Volume ownership is decided by the image, before the volume exists.** The application
+runs as uid 1001 and never as root. Docker seeds an empty named volume from whatever sits
+at the mount point in the image — contents *and* ownership — so `/data/uploads`,
+`/data/logs` and `/data/keys` are created in the image owned by 1001. Mount a volume over
+a path the image does not have and it arrives owned by root, and every upload fails.
+
+**The API container needed its own database, and that only showed up by running it.** The
+first `docker compose up -d` pointed the API at `clickup`, which is the seeded development
+database, and 11.6 promptly created its bootstrap administrator as a 31st user —
+`MemberResourceTest` asserts exactly 30. So compose now has a one-shot `api-db` service
+that creates `clickup_api` and exits, and the API uses that. It is a better shape anyway:
+the API starts against a genuinely empty database with no demo data, which is what a
+production deployment is, and the first administrator came out as `usr_101` — the first id
+the sequence hands out, which is itself the proof that the database was empty.
+
+**The integration tests now exercise key generation for free.** `quarkus.test.env` points
+the launched process at `target/it-keys/*.pem`, which do not exist, so every `mvn verify
+-Dnative` run generates a keypair inside the native image and signs its tokens with it.
+That is deliberate: RSA key generation is exactly the kind of thing that works on the JVM
+and is missing from a native image, and phase 8 already showed that a green unit suite
+says nothing about the shipped binary.
+
+**The dev key material was never in the native image to begin with.** Phase 2 recorded that
+the committed keypair and keystore "are packaged into the jar and the native image", and
+that was half wrong. A native image does not embed arbitrary classpath resources: searching
+a host-built binary for the dev private key's own base64 line finds nothing, while the same
+search inside `target/quarkus-app/app/clickup-1.0.0-SNAPSHOT.jar` finds it immediately. The
+`rm -rf` in the container build stays, because "native-image happened not to include it" is
+a weaker claim than "it was not there", and the line costs nothing.
+
+**What is still owed.** A plain `mvn package` jar does contain
+`jwt/dev-privateKey.pem`, `jwt/dev-publicKey.pem` and `tls/dev-keystore.p12` — verified,
+not assumed. Excluding them from the Maven build would also strip them from the test
+classpath and break every test that signs a token, so the deletion lives in the container
+build instead. The native container image is the production artifact, so this is real but
+bounded: it means the JVM jar is not shippable as-is.
 
 ## Phase 12 — Tests
 

@@ -32,6 +32,17 @@ public class User extends PanacheEntityBase {
     public static final String ID_PREFIX = "usr_";
     public static final String ID_SEQUENCE = "users_id_seq";
 
+    /**
+     * TeamMember.status for a usable account. The spec gives the field no enum and no
+     * endpoint that writes it, so it changes only against the database directly.
+     *
+     * <p>Here rather than in the one resource that used to own it because there are now
+     * two writers of {@link #status}: registration and the startup bootstrap. Two literal
+     * {@code "active"}s in two packages is how the login check and the account creation
+     * drift apart.
+     */
+    public static final String STATUS_ACTIVE = "active";
+
     @Id
     public String id;
 

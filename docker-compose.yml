@@ -1,14 +1,26 @@
-# Database only, per project decision: no logging, metrics or admin services here.
-# Production runs the app as a native image built with `./mvnw package -Dnative`;
-# this file exists so dev and prod talk to the same kind of Postgres.
+# Postgres and the API, and nothing else: no logging, metrics or admin services here,
+# per project decision.
 #
-#   docker compose up -d          start Postgres
-#   docker compose down           stop it (data survives in the named volume)
-#   docker compose down -v        stop it and DELETE all data
+#   docker compose up -d --build      build the native image and start both
+#   docker compose up -d              start both, reusing the image already built
+#   docker compose up -d postgres     just the database, for `mvn quarkus:dev` and tests
+#   docker compose logs -f app        follow the API
+#   docker compose down               stop everything (all data survives in the volumes)
+#   docker compose down -v            stop it and DELETE the database, uploads, logs
+#                                     and the signing key
+#
+# The first `--build` compiles a GraalVM native image inside the build container and takes
+# roughly ten to fifteen minutes; later ones reuse the cached Maven downloads and are much
+# faster. See src/main/docker/Dockerfile.native-multistage.
 #
 # Defaults below are development credentials and are intentionally weak.
 # Override them for anything reachable from outside your machine by putting
-# POSTGRES_* in a .env file next to this one (.env is git-ignored).
+# POSTGRES_* and ADMIN_* in a .env file next to this one (.env is git-ignored).
+#
+# What this stack does NOT do, said here rather than discovered later: it terminates no
+# TLS. The API listens on plain 7575 and expects something in front of it to be the thing
+# holding a certificate. Supply a keystore through QUARKUS_TLS_KEY_STORE_P12_PATH and
+# QUARKUS_TLS_KEY_STORE_P12_PASSWORD to have it bind 7443 as well.
 
 services:
   postgres:
@@ -41,5 +53,101 @@ services:
       retries: 5
       start_period: 30s
 
+  # A one-shot that creates the API's own database and exits. It exists because the
+  # `clickup` database is the *development* one: the test suite runs against it and asserts
+  # the demo seed is exactly 30 rows per table. An API container pointed at it would add
+  # its bootstrap administrator as a 31st user and fail a test three packages away, with
+  # nothing to connect the two.
+  #
+  # So the API gets `clickup_api`, which starts empty and stays that way -- which is also
+  # what a production database actually looks like: no demo data, one administrator, and
+  # Liquibase running every changeset that is not seed. The database inherits the cluster's
+  # UTF-8 and ICU `fa` collation from template1, so Persian still sorts correctly.
+  #
+  # Idempotent. It runs on every `up` and does nothing at all when the database is there.
+  api-db:
+    image: postgres:18.4-alpine
+    container_name: clickup-api-db-init
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:-clickup}
+    entrypoint:
+      - sh
+      - -c
+      - >
+        psql -h postgres -U "${POSTGRES_USER:-clickup}" -d postgres -tAc
+        "SELECT 1 FROM pg_database WHERE datname='${API_DB:-clickup_api}'"
+        | grep -q 1
+        || createdb -h postgres -U "${POSTGRES_USER:-clickup}" "${API_DB:-clickup_api}"
+    restart: "no"
+
+  app:
+    build:
+      context: .
+      dockerfile: src/main/docker/Dockerfile.native-multistage
+    image: clickup-api:native
+    container_name: clickup-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        # Not `service_started`. Liquibase runs the migrations during startup, so an API
+        # that races an initialising cluster does not retry -- it fails to start.
+        condition: service_healthy
+      api-db:
+        condition: service_completed_successfully
+    environment:
+      # Production has no defaults for any of these four; the image refuses to start
+      # rather than guess a database. `postgres` is the service name on the compose
+      # network, not localhost -- localhost inside this container is this container.
+      DB_USERNAME: ${POSTGRES_USER:-clickup}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-clickup}
+      DB_REACTIVE_URL: postgresql://postgres:5432/${API_DB:-clickup_api}
+      DB_JDBC_URL: jdbc:postgresql://postgres:5432/${API_DB:-clickup_api}
+
+      # The first administrator (task 11.6). A production database has no accounts at all
+      # -- the demo seed is filtered out -- and registration only ever creates students,
+      # so without this nobody can use POST /api/logs, which admits admins and nobody
+      # else. Created once, on the first start against an empty database, and then left
+      # alone: changing these values later does not change the account.
+      #
+      # Change this password through the API as soon as you are in. It sits in this file
+      # and in the container's environment, where `docker inspect` reads it.
+      ADMIN_STUDENT_ID: ${ADMIN_STUDENT_ID:-10000000}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-ChangeMe123}
+      ADMIN_NAME: ${ADMIN_NAME:-مدیر سیستم}
+
+      # Left unset deliberately: with no JWT_PRIVATE_KEY_LOCATION the application
+      # generates an RSA keypair into /data/keys on first start and reuses it forever
+      # after. Unique to this deployment, never in the image. Point these at your own
+      # files to use a key you manage instead.
+      # JWT_PRIVATE_KEY_LOCATION: /data/keys/jwt-private.pem
+      # JWT_PUBLIC_KEY_LOCATION: /data/keys/jwt-public.pem
+    ports:
+      - "${API_PORT:-7575}:7575"
+    volumes:
+      # Task 11.5. All three hold state the application creates and cannot recreate:
+      # uploaded files (D4), client log entries (D7), and the token signing key. Without
+      # these mounts every one of them lives on the container's own filesystem and is
+      # destroyed the next time the image is rebuilt or the container replaced. Only the
+      # key failure is loud -- a new key means every issued token stops verifying at once.
+      # Uploads vanish behind urls the database still serves, and log lines simply are
+      # not there.
+      - clickup-uploads:/data/uploads
+      - clickup-logs:/data/logs
+      - clickup-keys:/data/keys
+    healthcheck:
+      # /q/health/ready is the readiness probe from phase 1 and it checks the database
+      # connection, so a container reporting healthy has actually reached Postgres.
+      test: ["CMD", "curl", "-fsS", "http://localhost:7575/q/health/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
 volumes:
   clickup-pgdata:
+  clickup-uploads:
+  clickup-logs:
+  clickup-keys:

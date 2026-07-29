@@ -1,0 +1,103 @@
+####
+# The production image, and the one docker-compose.yml builds. It compiles the native
+# binary itself, so the only thing a machine needs in order to produce it is Docker:
+#
+#   docker compose up -d --build
+#
+# or on its own:
+#
+#   docker build -f src/main/docker/Dockerfile.native-multistage -t clickup-api .
+#   docker run --rm -p 7575:7575 -e DB_USERNAME=... clickup-api
+#
+# Its sibling src/main/docker/Dockerfile.native is the fast path and does the opposite:
+# it copies a binary you built on the host with `mvn package -Dnative`. Ten seconds
+# instead of ten minutes, and it ships exactly the binary the integration tests ran
+# against -- but only if that binary exists, which is why it is not what compose uses.
+#
+# ---- what this costs ----
+#
+# The first build is slow, on the order of ten to fifteen minutes, and most of that is
+# downloading the Maven dependency tree: the build container cannot see the host's ~/.m2.
+# The BuildKit cache mount below means later builds reuse those downloads, so only the
+# first one pays in full. Nothing here is cheap to run casually.
+#
+# It also does NOT ship the binary your integration tests exercised. Those run against the
+# host's GraalVM; this uses Mandrel inside the container. Same source, same Quarkus, two
+# different compilers -- close, not identical.
+####
+
+# ============================================================
+#  Stage 1 -- compile the native binary
+# ============================================================
+# Mandrel is GraalVM's OpenJDK-only distribution, built for exactly this job. The image
+# carries native-image and a JDK 25 and nothing else -- notably no Maven, which is why
+# this stage uses ./mvnw rather than mvn. That is the container's constraint, not a
+# preference; the wrapper downloads Maven 3.9.16 on first use and the cache mount keeps it.
+FROM quay.io/quarkus/ubi9-quarkus-mandrel-builder-image:jdk-25 AS build
+
+USER root
+RUN mkdir -p /code && chown 1001:1001 /code
+USER 1001
+WORKDIR /code
+
+COPY --chown=1001:1001 .mvn/ .mvn/
+COPY --chown=1001:1001 mvnw pom.xml ./
+COPY --chown=1001:1001 src/ src/
+
+# The committed development keypair and TLS keystore, gone before anything is compiled.
+#
+# They would probably not have survived anyway: a native image does not embed arbitrary
+# classpath resources, and searching a host-built binary for the dev key's own base64
+# finds nothing, while the same search inside a `mvn package` jar finds it immediately.
+# "Probably" is the problem. Production reads its keys from a volume (KeyMaterial) and its
+# keystore from an environment variable, so nothing in this build needs them, and deleting
+# them turns a property of native-image's resource handling into a fact about the file
+# system this image was built from.
+RUN rm -rf src/main/resources/jwt src/main/resources/tls
+
+# One step, on purpose. Splitting the dependency download into its own layer is the usual
+# trick, but a BuildKit cache mount already survives across builds independently of layer
+# caching, so the second build reuses every artifact regardless of what changed in src/.
+#
+# -DskipTests because the test suite needs a Postgres with the demo seed in it, and there
+# is none inside a build container. Tests run on the host, against the compose database.
+RUN --mount=type=cache,target=/home/quarkus/.m2,uid=1001,gid=1001 \
+    ./mvnw -B -Dnative -DskipTests package
+
+# ============================================================
+#  Stage 2 -- run it
+# ============================================================
+FROM registry.access.redhat.com/ubi9/ubi-minimal:9.7
+
+WORKDIR /work/
+RUN chown 1001 /work \
+    && chmod "g+rwX" /work \
+    && chown 1001:root /work
+
+# The three directories the application writes to, created here rather than at runtime so
+# that they exist owned by 1001 before any volume is mounted over them. That ordering is
+# the whole point: Docker seeds an empty named volume from whatever is at the mount point
+# in the image, ownership included, so a volume mounted here arrives writable. Mounted
+# over a path that did not exist, it would arrive owned by root and the application --
+# which runs as 1001 and never as root -- could not write a single file into it.
+#
+#   /data/uploads  POST /api/upload           (task 11.5, decision D4)
+#   /data/logs     POST /api/logs             (task 11.5, decision D7)
+#   /data/keys     the JWT keypair            (KeyMaterial)
+#
+# Without volumes on all three the container still runs, and still loses every upload,
+# every client log line, and its signing key each time it is replaced. The keys are the
+# loud failure -- every issued token stops verifying at once. The other two are silent.
+RUN mkdir -p /data/uploads /data/logs /data/keys \
+    && chown -R 1001:root /data \
+    && chmod -R "g+rwX" /data
+
+COPY --from=build --chown=1001:root --chmod=0755 /code/target/*-runner /work/application
+
+# 7443 is listed because the application will bind it, but only when the deployment
+# supplies a keystore through QUARKUS_TLS_KEY_STORE_P12_PATH. As shipped, nothing listens
+# there; see the TLS section of application.properties.
+EXPOSE 7575 7443
+USER 1001
+
+ENTRYPOINT ["./application", "-Dquarkus.http.host=0.0.0.0"]

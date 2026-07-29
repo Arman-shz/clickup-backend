@@ -1,4 +1,16 @@
 *
+
+# Dockerfile.native-multistage compiles the application inside the build container, so it
+# needs the source and the Maven wrapper. Everything the * above excludes stays excluded
+# -- notably .git/, graphify-out/, and all of target/ apart from the entries below.
+!.mvn
+!mvnw
+!pom.xml
+!src
+
+# Dockerfile.native and Dockerfile.jvm copy a build produced on the host instead.
+# Kept working, at the cost of sending a ~128 MB binary as build context whenever one
+# exists -- including to the multi-stage build, which then ignores it.
 !target/*-runner
 !target/*-runner.jar
 !target/lib/*
