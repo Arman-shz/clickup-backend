@@ -28,6 +28,15 @@ public final class ApiMessages {
     /** Any other unique-constraint collision. */
     public static final String CONFLICT = "این اطلاعات قبلا ثبت شده است.";
 
+    /** paths./api/upload.post.responses.400 -- the multipart carried no `file` part. */
+    public static final String FILE_REQUIRED = "فایلی ارسال نشده است.";
+
+    /** paths./api/upload.post.responses.400 -- a `file` part with nothing in it. */
+    public static final String FILE_EMPTY = "فایل ارسال‌شده خالی است.";
+
+    /** paths./api/upload.post.responses.413 -- over the 50 MiB the spec caps uploads at. */
+    public static final String FILE_TOO_LARGE = "حجم فایل بیشتر از حد مجاز است. حداکثر ۵۰ مگابایت.";
+
     private ApiMessages() {
     }
 }

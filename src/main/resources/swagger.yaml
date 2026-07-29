@@ -732,6 +732,21 @@ paths:
       tags:
         - File Upload
       summary: آپلود فایل تا سقف ۵۰ مگابایت
+      description: |
+        یک بخش `multipart/form-data` با نام `file`. سقف ۵۰ مگابایت (۵۲۴۲۸۸۰۰ بایت) است و
+        همین‌جا بررسی می‌شود؛ فایل بزرگ‌تر با ۴۱۳ و بدنه خطای استاندارد رد می‌شود.
+
+        نام ذخیره‌شده `<epoch>_<نام اصلی>` است. نام اصلی پاک‌سازی می‌شود — مسیر از آن حذف
+        و هر نویسه‌ای بیرون از حرف، رقم، نقطه، خط تیره و زیرخط به زیرخط تبدیل می‌شود.
+        حروف فارسی حفظ می‌شوند. اگر دو فایل هم‌نام در یک ثانیه آپلود شوند، نام دوم چهار
+        نویسه تصادفی می‌گیرد؛ هیچ فایلی بازنویسی نمی‌شود.
+
+        **`cloudMetadata` ساختگی است.** فایل روی دیسک همین سرور ذخیره می‌شود و هیچ
+        ارتباطی با فضای ابری برقرار نیست. این بخش از پیکربندی پر می‌شود تا شکل پاسخ همانی
+        بماند که مستند شده، اما `cdnUrl` به میزبانی اشاره می‌کند که چیزی سرو نمی‌کند و
+        `provider` فقط یک رشته در فایل تنظیمات است. این تصمیم D4 است.
+
+        `url` نسبی و روی همین API است: `GET /uploads/{filename}` بایت‌ها را برمی‌گرداند.
       security:
         - BearerAuth: []
       requestBody:
@@ -763,6 +778,83 @@ paths:
                   cdnUrl: "https://cdn.example.com/uploads/1722150000_report.pdf"
                   provider: "Google Cloud Object Storage"
                   objectKey: "uploads/1722150000_report.pdf"
+        '400':
+          description: بخش `file` ارسال نشده یا فایل خالی است
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                message: "فایلی ارسال نشده است."
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '413':
+          description: |
+            فایل بزرگ‌تر از ۵۰ مگابایت است.
+
+            یک سقف دوم هم در سطح سرور وجود دارد که کمی بالاتر تنظیم شده (چون پوشش
+            multipart خودش چند کیلوبایت به درخواست اضافه می‌کند). درخواستی که از آن سقف
+            هم بگذرد، پیش از رسیدن به کد برنامه قطع می‌شود و ۴۱۳ بدون بدنه برمی‌گرداند.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                message: "حجم فایل بیشتر از حد مجاز است. حداکثر ۵۰ مگابایت."
+
+  /uploads/{filename}:
+    get:
+      tags:
+        - File Upload
+      summary: دریافت فایل آپلودشده
+      description: |
+        **این مسیر در نسخه اولیه مشخصات نبود و اضافه شده است.** بدون آن، `url` که
+        `POST /api/upload` برمی‌گرداند به هیچ‌جا نمی‌رسد و همیشه ۴۰۴ می‌شود.
+
+        نیازمند توکن است، مثل هر مسیر دیگری بیرون از `/api/auth` و `/api/health`. هزینه‌اش
+        روی فرانت‌اند است: مرورگر هدر Authorization را روی `<img src>` نمی‌فرستد، پس
+        نمایش تصویر آپلودشده نیاز به `fetch` و ساختن blob URL دارد. جایگزینش این بود که
+        هر فایل آپلودشده برای هر کسی که نامش را بداند قابل خواندن باشد و نام‌ها راز نیستند.
+
+        نوع محتوا در خروجی محدود می‌شود: فقط تصویرهای بی‌خطر (`png`، `jpg`، `jpeg`،
+        `gif`، `webp`، `avif`، `bmp`) با نوع واقعی خود و به‌صورت inline سرو می‌شوند. هر
+        چیز دیگر — از جمله PDF و به‌ویژه `svg` و `html` که می‌توانند اسکریپت اجرا کنند —
+        با `application/octet-stream` و `Content-Disposition: attachment` برمی‌گردد. همه
+        پاسخ‌ها هدر `X-Content-Type-Options: nosniff` دارند.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: filename
+          in: path
+          required: true
+          schema:
+            type: string
+          description: همان `filename` که پاسخ آپلود برگردانده است
+          example: "1722150000_report.pdf"
+      responses:
+        '200':
+          description: محتوای فایل
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: |
+            فایلی با این نام وجود ندارد — یا نامی که فرستاده شده اصلاً مجاز نیست
+            (مثلاً تلاش برای بیرون رفتن از پوشه آپلود). هر دو حالت یک پاسخ می‌گیرند تا
+            حدس‌زدن مسیرها چیزی درباره دیسک سرور لو ندهد.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                message: "منبع مورد نظر پیدا نشد."
 
   # ==================== TEAM MEMBERS ====================
   /api/members:
@@ -1217,24 +1309,46 @@ components:
 
     FileUploadResponse:
       type: object
+      required:
+        - success
+        - url
+        - filename
+        - size
+        - cloudMetadata
       properties:
         success:
           type: boolean
         url:
           type: string
+          description: |
+            نشانی نسبی روی همین API. `GET /uploads/{filename}` آن را سرو می‌کند و نیازمند
+            توکن است. همین مقدار است که در `ChatMessage.fileUrl` ذخیره می‌شود.
         filename:
           type: string
+          description: نام ذخیره‌شده روی سرور، نه نامی که کلاینت فرستاده است
         size:
-          type: number
+          type: integer
+          format: int64
+          description: تعداد بایت‌های ذخیره‌شده، اندازه‌گیری‌شده روی سرور
         cloudMetadata:
           type: object
+          description: |
+            **ساختگی.** هیچ فضای ابری‌ای در کار نیست؛ این سه مقدار از پیکربندی ساخته
+            می‌شوند تا شکل پاسخ مستند حفظ شود. تصمیم D4.
+          required:
+            - cdnUrl
+            - provider
+            - objectKey
           properties:
             cdnUrl:
               type: string
+              description: از `app.upload.cdn-base-url` ساخته می‌شود و فعلاً به جایی نمی‌رسد
             provider:
               type: string
+              description: یک رشته ثابت در فایل تنظیمات
             objectKey:
               type: string
+              description: «کلید» فرضی، یعنی `uploads/<filename>`
 
     SuccessMessageResponse:
       type: object

@@ -49,3 +49,9 @@ graphify-out/
 
 # RTK local state
 .rtk/
+
+# Runtime data written by the application, not source.
+# uploads/ is where POST /api/upload puts files (D4); logs/ is where POST /api/logs
+# writes app.log and error.log (D7). Both are configurable and both are per-machine.
+uploads/
+logs/

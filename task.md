@@ -24,9 +24,21 @@ guessing would mean inventing behaviour the spec does not state.
   corrected.
 - ~~**D3 — Dev Services vs compose.**~~ **Decided:** dev uses the compose Postgres;
   Dev Services disabled. `./mvnw quarkus:dev` now requires `docker compose up -d` first.
-- **D4 — File upload destination.** `/api/upload` returns both a local-looking
-  `url: "/uploads/..."` and `cloudMetadata.provider: "Google Cloud Object Storage"`.
-  Local disk, real GCS, or local disk with synthesised cloud metadata? Blocks: 9.x.
+- ~~**D4 — File upload destination.**~~ **Decided:** local disk, with `cloudMetadata`
+  synthesised from configuration. The spec's own example gave it away — it returns a
+  server-relative `url: "/uploads/..."` *and* a `cdnUrl` on `example.com`, a reserved
+  placeholder domain, so that block was never describing a real bucket. Real GCS was
+  rejected as a separate integration rather than a phase-9 task: it needs a project, a
+  bucket and a service-account key that do not exist, costs money per GB, and would stop
+  `quarkus dev` and the whole test suite from running without credentials. The cost of
+  the choice, and it is a real one: **`cloudMetadata.cdnUrl` names a host that serves
+  nothing.** It is recorded as decorative in `swagger.yaml` rather than left to look
+  authoritative, and `app.upload.cdn-base-url` is the one place to change when a CDN
+  exists. Second cost: uploads live on the container filesystem, so production needs a
+  mounted volume or they die with the container — 11.5.
+  Third consequence, from the spec rather than the decision: nothing in it serves an
+  uploaded file back, so `GET /uploads/{filename}` was added to the spec. Without it the
+  `url` every upload returns is a 404.
 - ~~**D5 — `/api/projects/sync` semantics.**~~ **Decided:** upsert by `id`, delete
   nothing. A known id is updated, an unknown one is created under the id the client sent,
   and a project absent from the payload is left alone. The rejected reading — the payload
@@ -41,9 +53,26 @@ guessing would mean inventing behaviour the spec does not state.
   signed-in session. Added to `swagger.yaml`, so the spec stays the source of truth.
   This is not the member invitation that was removed — nobody is invited, and no
   existing account is involved.
-- **D7 — Central logging target.** `/api/logs` says it writes `/logs/app.log` and
-  `/logs/error.log`. Files on the container filesystem, or a DB table? Files vanish on
-  container restart unless a volume is added. Blocks: 10.1.
+- ~~**D7 — Central logging target.**~~ **Decided:** files, exactly where the spec says —
+  `app.log` takes every entry, `error.log` takes the `error` ones as well, both under a
+  configured directory. A `client_logs` table was rejected: it would have contradicted
+  the spec text, and an endpoint whose whole job is to absorb whatever the frontend
+  throws at it is the last thing that should be growing the database. The costs, stated
+  rather than discovered later: the files vanish on container restart unless a volume is
+  mounted (11.5, same volume question as uploads), nothing collects or ships them because
+  you ruled a logging stack out of compose, and there is no query path — an admin reads
+  them by tailing. Growth is bounded by size-based rotation in `ClientLogWriter` rather
+  than left open-ended.
+- ~~**D9 — Who may write to `/api/logs`.**~~ **Decided:** a valid token **and** the
+  `admin` role. The spec declares no `security` block on this route at all, so it was an
+  open write endpoint; `swagger.yaml` has been corrected. One consequence is worth being
+  blunt about, because it is not what "central client logging" usually means: a student's
+  browser can no longer report anything. Every client-side crash, every failed render,
+  every error that happens before or instead of a successful sign-in is now a 401 or a
+  403 and is never written down. The route only records what an admin's own session
+  hits. Second consequence: registration hard-codes `student` and the seed is filtered
+  out of production, so **a production deployment has no admin account and therefore
+  nobody who can use this route at all** — bootstrapping the first admin is 11.6.
 - ~~**D8 — Refresh token storage.**~~ **Decided by the spec itself:** the refreshToken
   example is a bare UUID. It carries no signature, so nothing about it can be verified
   without a lookup — it must be persisted. Table `refresh_tokens`.
@@ -394,8 +423,43 @@ they have ever run.
 
 ## Phase 9 — File upload
 
-- [!] 9.1 `POST /api/upload` multipart, 50 MB cap → `FileUploadResponse` — *needs D4*
-- [ ] 9.2 Reject oversized uploads with the spec's error shape
+- [x] 9.1 `POST /api/upload` multipart, 50 MB cap → `FileUploadResponse`. One part named
+      `file`, stored on local disk under `<epoch-seconds>_<sanitised original name>`,
+      `cloudMetadata` synthesised from configuration (D4). `FileStore` owns the
+      destination so a real object store would be a second implementation of one bean and
+      no change to the response
+- [x] 9.2 Reject oversized uploads with the spec's error shape — 413 with `ErrorResponse`,
+      enforced in Java at 50 MiB. `quarkus.http.limits.max-body-size` sits above it as a
+      backstop; that one aborts before any JAX-RS code runs, so it answers a bare 413 and
+      cannot be shaped. Also 400 for a missing `file` part and for an empty one
+- [x] 9.3 `GET /uploads/{filename}` — **added to the spec**, because the spec returned a
+      `url` and declared nothing that answers at it. Authenticated. Only inert image types
+      are served inline under their real type; everything else, PDF and SVG included, is
+      `application/octet-stream` + `attachment`, and every response carries `nosniff`
+
+**Phase 9 complete.** 34 tests across `UploadResourceTest`, `UploadLimitTest` and
+`FileStoreSanitiseTest`; full suite 295, 0 failures; database untouched.
+
+### What phase 9 turned up
+
+- **The filename is the whole attack surface of an upload.** It arrives from the client
+  and lands both on a disk and in a url. `FileStore.sanitise` is tested on its own rather
+  than only through HTTP, because the serve route reuses it as its validator — a name is
+  servable exactly when sanitising returns it unchanged, which is only a usable rule
+  because the function is idempotent, and that is now a test.
+- **RestAssured cannot send a Persian filename.** It writes `filename=` into the
+  multipart header as US-ASCII, so `گزارش-هفتگی.pdf` left the client as question marks
+  and arrived as underscores. The first failing test looked like a sanitiser bug and was
+  not: hand-building the multipart the way a browser does proved Quarkus decodes the
+  header as UTF-8 correctly. Worth remembering before trusting a client library about
+  what the server does with non-ASCII.
+- **Serving user files from the API's own origin is an XSS decision, not a MIME
+  decision.** An uploaded `.html` or `.svg` returned under its natural type executes on
+  this origin. The allow-list is the point; the extension map is not there for
+  convenience.
+- The 50 MiB cap is asserted from configuration rather than by posting 50 MiB — the
+  refusal path is exercised with the cap lowered to 1 KiB in a test profile, which costs
+  a second Quarkus boot and saves a minute per run.
 
 ## Phase 10 — Central logging
 
@@ -415,6 +479,15 @@ they have ever run.
 - [ ] 11.3 Build the native container image from `Dockerfile.native`
       (note: pulls a UBI base image — Docker Hub pulls are currently unreliable here)
 - [ ] 11.4 Runtime datasource config via env vars, no baked-in credentials
+- [ ] 11.5 A mounted volume for `app.upload.directory` and `app.logs.directory`. Both are
+      on the container filesystem by decision (D4, D7), so without this every uploaded
+      file and every client log entry dies with the container. Nothing else in the
+      application notices — the failure is silent
+- [ ] 11.6 A way to create the first admin. Registration hard-codes `student` and the seed
+      changesets are filtered out of production, so a production database has no admin at
+      all. `GET /api/reports` merely narrows for everyone; `POST /api/logs` is admin-only
+      (D9) and is therefore unusable by anybody. Probably a bootstrap account from the
+      environment, applied once at startup
 
 ## Phase 12 — Tests
 
