@@ -22,7 +22,10 @@ public final class ApiMessages {
     /** paths./api/auth/register.post.responses.409 */
     public static final String STUDENT_ID_TAKEN = "این شماره دانشجویی قبلا ثبت شده است.";
 
-    /** Any other unique-constraint collision, e.g. an email already claimed. */
+    /** paths./api/users/me.put.responses.409 */
+    public static final String EMAIL_TAKEN = "این ایمیل قبلا ثبت شده است.";
+
+    /** Any other unique-constraint collision. */
     public static final String CONFLICT = "این اطلاعات قبلا ثبت شده است.";
 
     private ApiMessages() {

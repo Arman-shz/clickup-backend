@@ -27,6 +27,15 @@ public class UserRepository extends PrefixedIdRepository<User> {
     }
 
     /**
+     * The collision check behind PUT /api/users/me. `email` is UNIQUE, so an address
+     * already claimed by another account has to be refused with a 409 rather than left
+     * to fail as a constraint violation.
+     */
+    public Uni<User> findByEmail(String email) {
+        return find("email", email).firstResult();
+    }
+
+    /**
      * GET /api/members. Ordered by name, which the database collates with the ICU `fa`
      * locale -- ordering here rather than in the caller keeps that collation in play.
      */

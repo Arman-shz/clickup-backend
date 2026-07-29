@@ -155,7 +155,15 @@ endpoint the spec actually protects arrives in 3.1.
       subject comes from the token's `upn`, never from the request, so the route takes no
       id and one account cannot address another. A token that verifies but names a
       deleted account gets the `401`, not a `404` — the spec documents no `404` here
-- [ ] 3.2 `PUT /api/users/me` (name, avatar, theme, language, notificationsEnabled)
+- [x] 3.2 `PUT /api/users/me` — name, **email**, avatar, theme, language,
+      notificationsEnabled. This line used to omit `email`; the spec's
+      `UpdateUserProfileRequest` lists it, so the spec won. A **merge**: a property the
+      request does not send is left as it was, because the schema requires nothing and
+      the alternative is a theme toggle wiping the account's name. The cost, and it is
+      real: an avatar or email cannot be cleared once set, only replaced. Email is UNIQUE,
+      so claiming another account's address is `409` — checked before the write so the
+      message can name what collided, with `DataConflictExceptionMapper` behind it for the
+      race. `role`, `studentId` and `status` are not in the schema and cannot be sent
 - [ ] 3.3 Enforce enums: `role` admin|student, `theme` light|dark, `language` fa|en
 
 ## Phase 4 — Projects

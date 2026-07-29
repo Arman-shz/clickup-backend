@@ -202,6 +202,14 @@ paths:
       tags:
         - User Profile
       summary: ویرایش اطلاعات پروفایل و تنظیمات
+      description: |
+        هر فیلد اختیاری است و فیلدهایی که ارسال نشوند بدون تغییر باقی می‌مانند —
+        درخواستی که فقط `theme` را بفرستد نام و ایمیل کاربر را پاک نمی‌کند.
+        به همین دلیل، حذف کردن `avatar` یا `email` از این مسیر ممکن نیست؛ تنها
+        می‌توان آن‌ها را با مقدار تازه جایگزین کرد.
+
+        `role`، `studentId` و `status` در این درخواست وجود ندارند و از این مسیر
+        قابل تغییر نیستند.
       security:
         - BearerAuth: []
       requestBody:
@@ -223,6 +231,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/UserProfile'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: این ایمیل قبلا توسط حساب دیگری ثبت شده است
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                message: "این ایمیل قبلا ثبت شده است."
 
   # ==================== PROJECTS ====================
   /api/projects:

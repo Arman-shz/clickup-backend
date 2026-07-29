@@ -17,10 +17,10 @@ import org.hibernate.exception.ConstraintViolationException;
  * unrelated types and this file must never be "tidied" to use the other one.
  *
  * <p>This is a net, not the primary check. POST /api/auth/register looks the student id
- * up first and answers 409 without ever reaching the database, which is both cheaper and
- * able to say precisely what collided. What is left for this mapper is the narrow race
- * where two identical registrations pass that lookup at the same moment, plus the
- * unique email that PUT /api/users/me can collide with once phase 3 exists.
+ * up first and PUT /api/users/me looks the email up first, so both answer 409 without
+ * ever reaching the database -- cheaper, and able to say precisely what collided. What is
+ * left for this mapper is the narrow race where two requests pass that lookup at the same
+ * moment and the second one loses at flush time.
  */
 @Provider
 public class DataConflictExceptionMapper implements ExceptionMapper<ConstraintViolationException> {
@@ -29,9 +29,14 @@ public class DataConflictExceptionMapper implements ExceptionMapper<ConstraintVi
     public Response toResponse(ConstraintViolationException exception) {
         // The constraint name distinguishes the cases the API can name precisely.
         String constraint = exception.getConstraintName();
-        String message = constraint != null && constraint.contains("student_id")
-                ? ApiMessages.STUDENT_ID_TAKEN
-                : ApiMessages.CONFLICT;
+        String message = ApiMessages.CONFLICT;
+        if (constraint != null) {
+            if (constraint.contains("student_id")) {
+                message = ApiMessages.STUDENT_ID_TAKEN;
+            } else if (constraint.contains("email")) {
+                message = ApiMessages.EMAIL_TAKEN;
+            }
+        }
 
         return Response.status(Response.Status.CONFLICT)
                 .entity(ErrorResponse.of(message))
