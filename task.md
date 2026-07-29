@@ -460,10 +460,59 @@ they have ever run.
 - The 50 MiB cap is asserted from configuration rather than by posting 50 MiB — the
   refusal path is exercised with the cap lowered to 1 KiB in a test profile, which costs
   a second Quarkus boot and saves a minute per run.
+- **`e7a24f8` broke the native build, and 295 green tests plus a green `mvn package` said
+  nothing.** A `static final SecureRandom` in `FileStore` is an instance in the image
+  heap, which GraalVM refuses outright: an instance created during the build would ship
+  with its seed baked in and produce the same sequence in every container. Found while
+  verifying phase 10, fixed by constructing it in the method that needs it — which runs
+  only on a filename collision. Same lesson as phase 8 from a different angle: the JVM
+  suite cannot see the artifact that ships. Unlike phase 8's, this one at least failed
+  loudly, at build time, instead of serving 500s.
 
 ## Phase 10 — Central logging
 
-- [!] 10.1 `POST /api/logs` accepting level/message/context — *needs D7*
+- [x] 10.1 `POST /api/logs` accepting level/message/context. One line of JSON per entry
+      into `app.log`, and into `error.log` as well when the level is `error` (D7).
+      **Admin only** (D9) — the spec had no `security` block at all, so this was an open
+      write endpoint; swagger.yaml corrected
+- [x] 10.2 Bounded growth: size-based rotation, one generation kept. Not an extra —
+      nothing else in this project would ever stop the file growing, since there is no
+      logging stack in compose to collect or trim it
+- [x] 10.3 `ForbiddenExceptionMapper` — `@RolesAllowed` produced a Quarkus-shaped 403;
+      now it is the spec's `ErrorResponse`, with a `Forbidden` response component added
+      to swagger.yaml
+
+**Phase 10 complete.** 21 tests across `LogResourceTest` and `ClientLogRotationTest`;
+full suite 316, 0 failures; database untouched.
+
+### What phase 10 turned up
+
+- **A log line is a place a caller can write text, so it is a place a caller can forge
+  entries.** A `message` containing `\n` would end the line and start what any reader
+  would take for a second entry that nobody sent. The line is built by Jackson rather
+  than by concatenation precisely so the newline is escaped, and that is a test of its
+  own.
+- **Rotation loses data, and it is supposed to.** One generation kept means that at the
+  10 MiB cap only the last 10–20 MiB of client logs exist; the batch before that is
+  overwritten, not promoted to `.2`. That is the deal being struck — bounded disk against
+  unbounded history — and it is worth knowing before someone goes looking for last
+  month's error.
+- **403 is not 401, and answering 401 here would have been a loop.** A student hitting an
+  admin-only route cannot fix anything by signing in again. `ForbiddenExceptionMapper`
+  exists because `@RolesAllowed` had been emitting Quarkus's own shape, unnoticed until
+  this route needed it — it is the first route in the API with a role requirement.
+- **`LogLevel` needed `@RegisterForReflection` and `Role` does not.** Same class of gap
+  as phase 8, from the other direction: the domain enums are registered by the Hibernate
+  extension through the entities that persist them, and this one persists nowhere, so
+  nothing would have reached it. Annotated pre-emptively rather than after a native
+  failure.
+- **Both phases are now covered by an integration test**, `UploadAndLogIT` — the routes
+  exist in the packaged build, the nested `CloudMetadata` record still serialises, and
+  the enum still binds. `quarkus.test.env.LOG_DIRECTORY` / `UPLOAD_DIRECTORY` point the
+  launched process at `target/`; without them it starts under the `prod` profile, tries
+  to create `/logs`, and dies. Verified: native image 2m44s, **9 integration tests pass
+  against the binary** (was 6). They still need the prod profile's TLS and JWT material
+  passed in by hand — 11.4.
 
 ## Phase 11 — Production build
 

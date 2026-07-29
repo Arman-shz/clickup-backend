@@ -890,25 +890,31 @@ paths:
       tags:
         - Central Logging
       summary: ارسال و ثبت لاگ از فرانت‌اند
-      description: ذخیره لاگ‌ها و خطاهای کلاینت در فایل‌های متمرکز server `/logs/app.log` و `/logs/error.log`.
+      description: |
+        ذخیره لاگ‌ها و خطاهای کلاینت در فایل‌های متمرکز server `/logs/app.log` و
+        `/logs/error.log`. هر ورودی یک خط JSON است؛ سطح `error` علاوه بر `app.log` در
+        `error.log` هم نوشته می‌شود.
+
+        **فقط مدیر.** نسخه اولیه مشخصات هیچ `security` برای این مسیر نداشت، یعنی هر کسی
+        می‌توانست روی آن بنویسد. این تصمیم D9 است و هزینه‌اش را باید صریح گفت: مرورگر یک
+        دانشجو دیگر نمی‌تواند چیزی گزارش کند. هر خطای سمت کلاینت، و به‌ویژه هر خطایی که
+        پیش از ورود موفق رخ می‌دهد، حالا ۴۰۱ یا ۴۰۳ می‌گیرد و هرگز ثبت نمی‌شود. آنچه این
+        مسیر ضبط می‌کند، چیزی است که نشست خودِ مدیر به آن برخورده است.
+
+        شناسه کاربر از توکن گرفته می‌شود و در هر خط نوشته می‌شود؛ چیزی که در بدنه بیاید
+        نادیده گرفته می‌شود.
+
+        پاسخ در صورت پذیرش ورودی همیشه ۲۰۰ است، حتی اگر نوشتن روی دیسک شکست بخورد.
+        فرانت‌اند با «دیسک پر است» کاری نمی‌تواند بکند، و تبدیل آن به خطای درخواست یعنی هر
+        گزارش خطا خودش یک گزارش خطای دوم بسازد.
+      security:
+        - BearerAuth: []
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              required:
-                - level
-                - message
-              properties:
-                level:
-                  type: string
-                  enum: [info, warn, error]
-                message:
-                  type: string
-                context:
-                  type: object
-                  additionalProperties: true
+              $ref: '#/components/schemas/ClientLogRequest'
             example:
               level: "error"
               message: "Failed to render chart component"
@@ -918,6 +924,22 @@ paths:
       responses:
         '200':
           $ref: '#/components/responses/SuccessMessage'
+        '400':
+          description: |
+            `level` خارج از مجموعه مجاز است، یا `message` خالی یا بلندتر از ۴۰۹۶ نویسه است.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                message: "اطلاعات ورودی نامعتبر است."
+                errors:
+                  - "level: must be one of [info, warn, error], was: fatal"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
   # ==================== HEALTH ====================
   /api/health:
@@ -1350,6 +1372,32 @@ components:
               type: string
               description: «کلید» فرضی، یعنی `uploads/<filename>`
 
+    ClientLogRequest:
+      type: object
+      required:
+        - level
+        - message
+      properties:
+        level:
+          type: string
+          enum: [info, warn, error]
+          description: |
+            مقدار خارج از این سه، پیش از هر نوشتنی با ۴۰۰ رد می‌شود — نه اینکه در فایل
+            نوشته شود و بعد چیزی که دنبال `"level":"error"` می‌گردد آن را نبیند.
+        message:
+          type: string
+          maxLength: 4096
+          description: |
+            سقف طول عمدی است، نه تزئینی: هر ورودی یک خط در فایلی است که هم‌زمان به آن
+            append می‌شود، و کوتاه ماندن خط چیزی است که یک append را اتمیک نگه می‌دارد.
+        context:
+          type: object
+          additionalProperties: true
+          description: |
+            آزاد است و آزاد می‌ماند. اگر JSON آن از ۸۱۹۲ بایت بگذرد، به‌جای رد کردن کل
+            ورودی، با نشانه `{"_truncated": true}` جایگزین می‌شود — از دست دادن گزارش خطا
+            برای حفظ جزئیاتش، بدترین معامله ممکن روی این مسیر بود.
+
     SuccessMessageResponse:
       type: object
       properties:
@@ -1400,6 +1448,20 @@ components:
           example:
             success: false
             message: "دسترسی غیرمجاز. لطفا دوباره وارد شوید."
+
+    Forbidden:
+      description: |
+        توکن معتبر است اما نقش لازم را ندارد.
+
+        عمداً ۴۰۱ نیست: ۴۰۱ به کلاینت می‌گوید دوباره وارد شو، و اینجا دوباره وارد شدن
+        چیزی را عوض نمی‌کند — حسابی که مدیر نیست، با ورود مجدد هم مدیر نمی‌شود.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            message: "این عملیات فقط برای مدیر مجاز است."
 
     NotFound:
       description: منبع مورد نظر یافت نشد

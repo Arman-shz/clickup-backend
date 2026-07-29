@@ -59,8 +59,6 @@ public class FileStore {
     /** Everything outside this becomes an underscore. {@code \p{L}} keeps Persian intact. */
     private static final String UNSAFE = "[^\\p{L}\\p{N}._-]";
 
-    private static final SecureRandom RANDOM = new SecureRandom();
-
     @Inject
     Vertx vertx;
 
@@ -191,9 +189,18 @@ public class FileStore {
         return trimmed.isBlank() ? FALLBACK_NAME : trimmed;
     }
 
+    /**
+     * Four hex characters to break a name collision.
+     *
+     * <p>The {@link SecureRandom} is built here rather than held in a static field, and
+     * that is not a style choice: a native image refuses to build with a Random in the
+     * image heap, because an instance created during the build would ship with its seed
+     * baked in and produce the same sequence in every container. This runs only when two
+     * uploads of the same name land in the same second, so constructing one is free.
+     */
     private static String randomSuffix() {
         byte[] bytes = new byte[2];
-        RANDOM.nextBytes(bytes);
+        new SecureRandom().nextBytes(bytes);
         return HexFormat.of().formatHex(bytes).toLowerCase(Locale.ROOT);
     }
 

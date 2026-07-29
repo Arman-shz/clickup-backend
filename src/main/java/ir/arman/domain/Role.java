@@ -14,6 +14,22 @@ public enum Role {
     ADMIN("admin"),
     STUDENT("student");
 
+    /**
+     * The same string as {@code ADMIN.value()}, as a compile-time constant.
+     *
+     * <p>{@code @RolesAllowed} takes literals only, so without this the role would be
+     * spelled out again at every use site. It cannot be the constructor argument above --
+     * an enum constant may not reference a static field of its own class -- so the two are
+     * checked against each other when the class loads instead.
+     */
+    public static final String ADMIN_VALUE = "admin";
+
+    static {
+        if (!ADMIN.value.equals(ADMIN_VALUE)) {
+            throw new IllegalStateException("Role.ADMIN_VALUE no longer matches Role.ADMIN");
+        }
+    }
+
     private final String value;
 
     Role(String value) {

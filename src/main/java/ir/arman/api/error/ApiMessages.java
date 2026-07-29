@@ -37,6 +37,9 @@ public final class ApiMessages {
     /** paths./api/upload.post.responses.413 -- over the 50 MiB the spec caps uploads at. */
     public static final String FILE_TOO_LARGE = "حجم فایل بیشتر از حد مجاز است. حداکثر ۵۰ مگابایت.";
 
+    /** components/responses/Forbidden -- a valid token, but not the admin role. */
+    public static final String FORBIDDEN = "این عملیات فقط برای مدیر مجاز است.";
+
     private ApiMessages() {
     }
 }
